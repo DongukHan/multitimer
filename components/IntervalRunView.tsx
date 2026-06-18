@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, useColorScheme } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { IntervalSession } from '@/store/intervalStore';
 import { formatTime } from '@/utils/time';
 import { scheduleTimerNotification, cancelNotification } from '@/utils/notifications';
@@ -66,7 +67,7 @@ export default function IntervalRunView({ session, onStop }: Props) {
   }, [isRunning]);
 
   return (
-    <View style={[styles.container, isDark && styles.containerDark]}>
+    <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
       <Text style={[styles.sessionLabel, isDark && styles.textDark]}>{session.label}</Text>
       <Text style={[styles.meta, isDark && styles.textDark]}>반복 {repeat}/{session.repeatCount} · 구간 {stepIdx + 1}/{session.steps.length}</Text>
       <Text style={[styles.stepLabel, isDark && styles.textDark]}>{currentStep?.label}</Text>
@@ -80,7 +81,7 @@ export default function IntervalRunView({ session, onStop }: Props) {
           <Text style={styles.pauseBtnText}>{isRunning ? '일시정지' : '계속'}</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

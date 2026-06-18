@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, Modal, TextInput, Switch, StyleSheet, useColorScheme, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAlarmStore, Alarm } from '@/store/alarmStore';
-import { scheduleAlarmNotification, cancelNotification } from '@/utils/notifications';
+import { scheduleAlarmNotification, cancelNotification, requestNotificationPermission } from '@/utils/notifications';
 import AdBanner from '@/components/AdBanner';
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -15,6 +15,7 @@ export default function AlarmScreen() {
 
   useEffect(() => {
     hydrate();
+    requestNotificationPermission();
   }, []);
 
   const handleToggle = async (id: string) => {
@@ -105,11 +106,12 @@ function AlarmEditModal({ visible, alarm, onSave, onClose, isDark }: {
   const [days, setDays] = useState<number[]>(alarm?.daysOfWeek ?? []);
 
   useEffect(() => {
+    if (!visible) return;
     setHour(alarm?.hour.toString() ?? '7');
     setMinute(alarm?.minute.toString() ?? '0');
     setLabel(alarm?.label ?? '');
     setDays(alarm?.daysOfWeek ?? []);
-  }, [alarm]);
+  }, [alarm, visible]);
 
   const toggleDay = (d: number) => setDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort());
 

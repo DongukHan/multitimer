@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, useColorScheme } from 'react-
 import { useTimerStore, TimerItem } from '@/store/timerStore';
 import { formatTime } from '@/utils/time';
 import { scheduleTimerNotification, cancelNotification } from '@/utils/notifications';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 type Props = { timer: TimerItem };
 
@@ -26,6 +27,15 @@ export default function TimerCard({ timer }: Props) {
       cancelNotification(`timer_${timer.id}`);
     }
   }, [timer.remainingSeconds]);
+
+  useEffect(() => {
+    if (timer.isRunning) {
+      activateKeepAwakeAsync();
+    } else {
+      deactivateKeepAwake();
+    }
+    return () => { deactivateKeepAwake(); };
+  }, [timer.isRunning]);
 
   const handleStart = async () => {
     if (isFinished) {
@@ -54,7 +64,10 @@ export default function TimerCard({ timer }: Props) {
     <View style={[styles.card, isDark && styles.cardDark]}>
       <View style={styles.header}>
         <Text style={[styles.label, isDark && styles.textDark]}>{timer.label}</Text>
-        <TouchableOpacity onPress={() => removeTimer(timer.id)}>
+        <TouchableOpacity onPress={async () => {
+          await cancelNotification(`timer_${timer.id}`);
+          removeTimer(timer.id);
+        }}>
           <Text style={styles.remove}>✕</Text>
         </TouchableOpacity>
       </View>
