@@ -14,23 +14,31 @@ export default function AddTimerModal({ visible, onClose }: Props) {
 
   const totalSeconds = (parseInt(hours) || 0) * 3600 + (parseInt(minutes) || 0) * 60 + (parseInt(seconds) || 0);
 
+  const handleClose = () => {
+    setLabel('');
+    setHours('0');
+    setMinutes('0');
+    setSeconds('0');
+    onClose();
+  };
+
   const handleAdd = () => {
     if (totalSeconds <= 0) return;
     addTimer(label || '타이머', totalSeconds);
-    onClose();
+    handleClose();
   };
 
   const handlePreset = (preset: TimerPreset) => {
     addTimer(preset.label, preset.durationSeconds);
-    onClose();
+    handleClose();
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <View style={[styles.container, isDark && styles.containerDark]}>
         <View style={styles.header}>
           <Text style={[styles.title, isDark && styles.textDark]}>타이머 추가</Text>
-          <TouchableOpacity onPress={onClose}><Text style={styles.close}>✕</Text></TouchableOpacity>
+          <TouchableOpacity onPress={handleClose}><Text style={styles.close}>✕</Text></TouchableOpacity>
         </View>
         <TextInput style={[styles.input, isDark && styles.inputDark]} placeholder="이름 (선택)" placeholderTextColor="#999" value={label} onChangeText={setLabel} />
         <View style={styles.timeRow}>

@@ -8,7 +8,7 @@ import AdBanner from '@/components/AdBanner';
 import { requestNotificationPermission } from '@/utils/notifications';
 
 export default function TimerScreen() {
-  const { timers, hydrated, hydrate } = useTimerStore();
+  const { timers, hydrate } = useTimerStore();
   const [modalVisible, setModalVisible] = useState(false);
   const isDark = useColorScheme() === 'dark';
 

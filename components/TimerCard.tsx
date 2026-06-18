@@ -19,7 +19,7 @@ export default function TimerCard({ timer }: Props) {
       if (intervalRef.current) clearInterval(intervalRef.current);
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [timer.isRunning]);
+  }, [timer.isRunning, tickTimer]);
 
   useEffect(() => {
     if (timer.remainingSeconds === 0 && !timer.isRunning) {
@@ -28,6 +28,11 @@ export default function TimerCard({ timer }: Props) {
   }, [timer.remainingSeconds]);
 
   const handleStart = async () => {
+    if (isFinished) {
+      resetTimer(timer.id);
+      await cancelNotification(`timer_${timer.id}`);
+      return;
+    }
     startTimer(timer.id);
     await scheduleTimerNotification(timer.id, timer.label, timer.remainingSeconds);
   };
