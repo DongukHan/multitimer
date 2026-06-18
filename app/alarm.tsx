@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Modal, TextInput, Switch, StyleSheet, useColorScheme, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, Modal, TextInput, Switch, StyleSheet, useColorScheme, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAlarmStore, Alarm } from '@/store/alarmStore';
 import { scheduleAlarmNotification, cancelNotification } from '@/utils/notifications';
@@ -8,7 +8,7 @@ import AdBanner from '@/components/AdBanner';
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default function AlarmScreen() {
-  const { alarms, hydrated, hydrate, addAlarm, updateAlarm, deleteAlarm, toggleAlarm } = useAlarmStore();
+  const { alarms, hydrate, addAlarm, updateAlarm, deleteAlarm, toggleAlarm } = useAlarmStore();
   const [showEdit, setShowEdit] = useState(false);
   const [editTarget, setEditTarget] = useState<Alarm | null>(null);
   const isDark = useColorScheme() === 'dark';
