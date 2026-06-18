@@ -1,22 +1,24 @@
-# MultiTimer Implementation Plan
+# MultiTimer Implementation Plan (React Native/Expo)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Android 타이머/스톱워치/인터벌/알람 앱 (AdMob 수익화 포함) 을 처음부터 Play Store 출시 가능 수준으로 구현한다.
+**Goal:** Expo(React Native) 기반 타이머/스톱워치/인터벌/알람 앱을 Android + iOS 동시 출시 가능 수준으로 구현한다.
 
-**Architecture:** 탭 4개(타이머·스톱워치·인터벌·알람)를 Bottom Navigation으로 연결. 타이머·인터벌은 Foreground Service로 백그라운드 실행, 알람은 AlarmManager exact alarm으로 트리거. Room DB로 프리셋·인터벌·알람 영속화.
+**Architecture:** Expo Router 파일 기반 탭 네비게이션, Zustand로 상태관리, AsyncStorage로 영속화, expo-notifications로 백그라운드 알람 처리.
 
-**Tech Stack:** Kotlin, Jetpack Compose, Room, Hilt(DI), Foreground Service, AlarmManager, AdMob(배너)
+**Tech Stack:** Expo SDK 52, TypeScript, Expo Router, Zustand, AsyncStorage, expo-notifications, expo-av, react-native-google-mobile-ads
 
 ## Global Constraints
 
-- minSdk 26 (Android 8.0), targetSdk 34
-- Kotlin 1.9+, Compose BOM 2024.05.00
-- 패키지명: `com.multitimer`
+- Expo SDK 52, TypeScript strict mode
+- 패키지 관리자: npm
 - 프로젝트 루트: `C:\Users\dwhan\projects\multitimer`
-- AdMob 테스트 App ID: `ca-app-pub-3940256099942544~3347511713` (실 출시 전 교체)
-- 배너 테스트 Unit ID: `ca-app-pub-3940256099942544/6300978111`
-- 모든 UI는 Material3 + Dark mode 지원
+- 패키지명(bundleId): `com.multitimer`
+- AdMob 테스트 배너 ID (Android): `ca-app-pub-3940256099942544/6300978111`
+- AdMob 테스트 배너 ID (iOS): `ca-app-pub-3940256099942544/2934735716`
+- 모든 UI는 React Native Paper 또는 기본 RN 컴포넌트 + StyleSheet 사용
+- 다크 모드: `useColorScheme()` 훅으로 처리
+- 커밋은 각 Task 완료 시 `feat:` prefix
 
 ---
 
@@ -25,2208 +27,1619 @@
 ```
 multitimer/
   app/
-    build.gradle.kts
-    src/main/
-      AndroidManifest.xml
-      java/com/multitimer/
-        MainActivity.kt
-        navigation/
-          NavGraph.kt
-        timer/
-          TimerService.kt
-          TimerViewModel.kt
-          TimerScreen.kt
-        stopwatch/
-          StopwatchViewModel.kt
-          StopwatchScreen.kt
-        interval/
-          IntervalService.kt
-          IntervalViewModel.kt
-          IntervalScreen.kt
-        alarm/
-          AlarmReceiver.kt
-          BootReceiver.kt
-          AlarmFullscreenActivity.kt
-          AlarmViewModel.kt
-          AlarmScreen.kt
-        data/
-          AppDatabase.kt
-          TimerPreset.kt   (Entity + DAO)
-          IntervalSession.kt + IntervalStep.kt + IntervalDao.kt
-          Alarm.kt + AlarmDao.kt
-        ui/
-          theme/Theme.kt
-          AdBanner.kt
-        notifications/
-          NotificationHelper.kt
-        di/
-          AppModule.kt
-      res/
-        values/strings.xml
-        xml/file_paths.xml (불필요, 생략 가능)
-  build.gradle.kts (project-level)
-  settings.gradle.kts
+    _layout.tsx          # Root layout (탭 네비게이션)
+    index.tsx            # 타이머 탭
+    stopwatch.tsx        # 스톱워치 탭
+    interval.tsx         # 인터벌 탭
+    alarm.tsx            # 알람 탭
+  components/
+    AdBanner.tsx         # AdMob 배너
+    TimerCard.tsx        # 타이머 카드
+    AddTimerModal.tsx    # 타이머 추가 모달
+    IntervalRunView.tsx  # 인터벌 실행 화면
+  store/
+    timerStore.ts        # 타이머 + 프리셋 (Zustand)
+    stopwatchStore.ts    # 스톱워치 (Zustand)
+    intervalStore.ts     # 인터벌 세션 (Zustand)
+    alarmStore.ts        # 알람 (Zustand)
+  utils/
+    notifications.ts     # expo-notifications 헬퍼
+    storage.ts           # AsyncStorage 헬퍼
+    time.ts              # 시간 포맷 유틸
+  app.json
+  package.json
+  tsconfig.json
+  docs/ (기존 스펙/플랜 문서)
 ```
 
 ---
 
-### Task 1: 프로젝트 생성 및 의존성 설정
+### Task 1: Expo 프로젝트 초기화 및 의존성 설치
 
 **Files:**
-- Create: `app/build.gradle.kts`
-- Create: `build.gradle.kts` (project)
-- Create: `settings.gradle.kts`
-- Create: `app/src/main/AndroidManifest.xml`
+- Create: `package.json` (Expo가 생성)
+- Create: `app.json`
+- Create: `tsconfig.json`
+- Create: `utils/time.ts`
 
 **Interfaces:**
-- Produces: 빌드 가능한 빈 Compose 앱, Hilt 초기화
+- Produces: 실행 가능한 빈 Expo 앱, 모든 의존성 설치 완료
+- Produces: `formatTime(ms: number): string` — `utils/time.ts`
 
-- [ ] **Step 1: Android Studio에서 새 프로젝트 생성**
+- [ ] **Step 1: 기존 파일 백업 후 Expo 프로젝트 생성**
 
-  Android Studio → New Project → Empty Activity (Compose)
-  - Name: MultiTimer
-  - Package: `com.multitimer`
-  - Save location: `C:\Users\dwhan\projects\multitimer`
-  - Language: Kotlin
-  - Min SDK: API 26
+  `C:\Users\dwhan\projects\multitimer` 경로에 이미 docs/ 폴더가 있으므로, 임시 폴더에 생성 후 병합:
 
-- [ ] **Step 2: app/build.gradle.kts 의존성 교체**
+  ```bash
+  cd C:\Users\dwhan\projects
+  npx create-expo-app multitimer-tmp --template blank-typescript
+  # 생성 완료 후:
+  cd multitimer-tmp
+  # 생성된 파일들을 multitimer/ 로 복사 (docs/ 제외)
+  xcopy /E /Y . ..\multitimer\ /EXCLUDE:exclude.txt
+  ```
 
-  파일 전체를 아래로 교체:
+  더 간단한 방법 — multitimer 폴더에서 직접:
+  ```bash
+  cd C:\Users\dwhan\projects\multitimer
+  npx create-expo-app@latest . --template blank-typescript
+  ```
+  (폴더가 비어있지 않다고 경고하면 Y로 계속)
 
-  ```kotlin
-  plugins {
-      alias(libs.plugins.android.application)
-      alias(libs.plugins.kotlin.android)
-      alias(libs.plugins.kotlin.compose)
-      alias(libs.plugins.hilt)
-      alias(libs.plugins.ksp)
-  }
+- [ ] **Step 2: 추가 의존성 설치**
 
-  android {
-      namespace = "com.multitimer"
-      compileSdk = 34
+  ```bash
+  cd C:\Users\dwhan\projects\multitimer
+  npx expo install expo-notifications expo-av expo-keep-awake @react-native-async-storage/async-storage
+  npm install zustand
+  npm install react-native-google-mobile-ads
+  npx expo install expo-router react-native-safe-area-context react-native-screens expo-linking expo-constants expo-status-bar
+  ```
 
-      defaultConfig {
-          applicationId = "com.multitimer"
-          minSdk = 26
-          targetSdk = 34
-          versionCode = 1
-          versionName = "1.0"
-      }
+- [ ] **Step 3: app.json 설정**
 
-      buildTypes {
-          release {
-              isMinifyEnabled = true
-              proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+  `app.json`:
+
+  ```json
+  {
+    "expo": {
+      "name": "MultiTimer",
+      "slug": "multitimer",
+      "version": "1.0.0",
+      "orientation": "portrait",
+      "scheme": "multitimer",
+      "userInterfaceStyle": "automatic",
+      "ios": {
+        "bundleIdentifier": "com.multitimer",
+        "supportsTablet": false
+      },
+      "android": {
+        "package": "com.multitimer",
+        "adaptiveIcon": {
+          "backgroundColor": "#ffffff"
+        },
+        "permissions": [
+          "SCHEDULE_EXACT_ALARM",
+          "USE_EXACT_ALARM",
+          "RECEIVE_BOOT_COMPLETED",
+          "VIBRATE",
+          "POST_NOTIFICATIONS"
+        ]
+      },
+      "plugins": [
+        "expo-router",
+        [
+          "expo-notifications",
+          {
+            "icon": "./assets/images/icon.png",
+            "color": "#ffffff",
+            "sounds": []
           }
+        ],
+        [
+          "react-native-google-mobile-ads",
+          {
+            "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+            "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+          }
+        ]
+      ],
+      "experiments": {
+        "typedRoutes": true
       }
-      compileOptions {
-          sourceCompatibility = JavaVersion.VERSION_17
-          targetCompatibility = JavaVersion.VERSION_17
+    }
+  }
+  ```
+
+- [ ] **Step 4: tsconfig.json 설정**
+
+  ```json
+  {
+    "extends": "expo/tsconfig.base",
+    "compilerOptions": {
+      "strict": true,
+      "paths": {
+        "@/*": ["./*"]
       }
-      kotlinOptions { jvmTarget = "17" }
-      buildFeatures { compose = true }
-  }
-
-  dependencies {
-      val composeBom = platform("androidx.compose:compose-bom:2024.05.00")
-      implementation(composeBom)
-      implementation("androidx.compose.ui:ui")
-      implementation("androidx.compose.material3:material3")
-      implementation("androidx.compose.ui:ui-tooling-preview")
-      implementation("androidx.activity:activity-compose:1.9.0")
-      implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
-      implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
-      implementation("androidx.navigation:navigation-compose:2.7.7")
-
-      // Hilt
-      implementation("com.google.dagger:hilt-android:2.51.1")
-      ksp("com.google.dagger:hilt-compiler:2.51.1")
-      implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
-
-      // Room
-      implementation("androidx.room:room-runtime:2.6.1")
-      implementation("androidx.room:room-ktx:2.6.1")
-      ksp("androidx.room:room-compiler:2.6.1")
-
-      // AdMob
-      implementation("com.google.android.gms:play-services-ads:23.1.0")
-
-      // DataStore (타이머 상태 복원용)
-      implementation("androidx.datastore:datastore-preferences:1.1.1")
-
-      debugImplementation("androidx.compose.ui:ui-tooling")
-      testImplementation("junit:junit:4.13.2")
-      testImplementation("androidx.room:room-testing:2.6.1")
-      androidTestImplementation(composeBom)
-      androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    }
   }
   ```
 
-- [ ] **Step 3: libs.versions.toml 플러그인 추가**
+- [ ] **Step 5: utils/time.ts 작성**
 
-  `gradle/libs.versions.toml`의 `[plugins]` 섹션에 추가:
+  ```typescript
+  export function formatTime(totalSeconds: number): string {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${pad(h)}:${pad(m)}:${pad(s)}`;
+    return `${pad(m)}:${pad(s)}`;
+  }
 
-  ```toml
-  [versions]
-  hilt = "2.51.1"
-  ksp = "1.9.24-1.0.20"
+  export function formatMs(ms: number): string {
+    const min = Math.floor(ms / 60000);
+    const sec = Math.floor((ms % 60000) / 1000);
+    const cent = Math.floor((ms % 1000) / 10);
+    return `${pad(min)}:${pad(sec)}.${pad(cent)}`;
+  }
 
-  [plugins]
-  hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
-  ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-  ```
-
-  project-level `build.gradle.kts`:
-
-  ```kotlin
-  plugins {
-      alias(libs.plugins.android.application) apply false
-      alias(libs.plugins.kotlin.android) apply false
-      alias(libs.plugins.kotlin.compose) apply false
-      alias(libs.plugins.hilt) apply false
-      alias(libs.plugins.ksp) apply false
+  function pad(n: number): string {
+    return n.toString().padStart(2, '0');
   }
   ```
 
-- [ ] **Step 4: AndroidManifest.xml 권한 및 컴포넌트 선언**
+- [ ] **Step 6: 실행 확인**
 
-  ```xml
-  <?xml version="1.0" encoding="utf-8"?>
-  <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-      <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-      <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-      <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-      <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-      <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-      <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-      <uses-permission android:name="android.permission.VIBRATE" />
-      <uses-permission android:name="android.permission.INTERNET" />
-
-      <application
-          android:name=".MultiTimerApp"
-          android:label="@string/app_name"
-          android:theme="@style/Theme.MultiTimer"
-          android:allowBackup="true">
-
-          <activity
-              android:name=".MainActivity"
-              android:exported="true">
-              <intent-filter>
-                  <action android:name="android.intent.action.MAIN" />
-                  <category android:name="android.intent.category.LAUNCHER" />
-              </intent-filter>
-          </activity>
-
-          <activity
-              android:name=".alarm.AlarmFullscreenActivity"
-              android:exported="false"
-              android:showOnLockScreen="true"
-              android:turnScreenOn="true" />
-
-          <service
-              android:name=".timer.TimerService"
-              android:foregroundServiceType="specialUse"
-              android:exported="false" />
-
-          <service
-              android:name=".interval.IntervalService"
-              android:foregroundServiceType="specialUse"
-              android:exported="false" />
-
-          <receiver
-              android:name=".alarm.AlarmReceiver"
-              android:exported="false" />
-
-          <receiver
-              android:name=".alarm.BootReceiver"
-              android:exported="true">
-              <intent-filter>
-                  <action android:name="android.intent.action.BOOT_COMPLETED" />
-              </intent-filter>
-          </receiver>
-
-          <meta-data
-              android:name="com.google.android.gms.ads.APPLICATION_ID"
-              android:value="ca-app-pub-3940256099942544~3347511713" />
-
-      </application>
-  </manifest>
+  ```bash
+  npx expo start
   ```
 
-- [ ] **Step 5: MultiTimerApp.kt 생성 (Hilt + AdMob 초기화)**
-
-  `app/src/main/java/com/multitimer/MultiTimerApp.kt`:
-
-  ```kotlin
-  package com.multitimer
-
-  import android.app.Application
-  import com.google.android.gms.ads.MobileAds
-  import dagger.hilt.android.HiltAndroidApp
-
-  @HiltAndroidApp
-  class MultiTimerApp : Application() {
-      override fun onCreate() {
-          super.onCreate()
-          MobileAds.initialize(this)
-      }
-  }
-  ```
-
-- [ ] **Step 6: 빌드 확인**
-
-  Android Studio → Build → Make Project  
-  예상: BUILD SUCCESSFUL, 에러 없음
+  Expo Go 앱(폰에 설치) 또는 에뮬레이터에서 기본 화면 확인
+  예상: "Open up App.tsx to start working on your app!" 화면 표시
 
 - [ ] **Step 7: 커밋**
 
   ```bash
-  git init
+  cd C:\Users\dwhan\projects\multitimer
   git add .
-  git commit -m "chore: project setup with Compose, Hilt, Room, AdMob"
+  git commit -m "chore: expo project init with all dependencies"
+  git push
   ```
 
 ---
 
-### Task 2: Room 데이터베이스 & 엔티티
+### Task 2: Expo Router 탭 네비게이션 + AdMob 배너
 
 **Files:**
-- Create: `data/TimerPreset.kt`
-- Create: `data/IntervalSession.kt`
-- Create: `data/IntervalStep.kt`
-- Create: `data/Alarm.kt`
-- Create: `data/AppDatabase.kt`
-- Create: `di/AppModule.kt`
-- Test: `test/data/TimerPresetDaoTest.kt`
+- Create: `app/_layout.tsx`
+- Create: `app/index.tsx` (플레이스홀더)
+- Create: `app/stopwatch.tsx` (플레이스홀더)
+- Create: `app/interval.tsx` (플레이스홀더)
+- Create: `app/alarm.tsx` (플레이스홀더)
+- Create: `components/AdBanner.tsx`
 
 **Interfaces:**
-- Produces:
-  - `TimerPresetDao.getAll(): Flow<List<TimerPreset>>`
-  - `TimerPresetDao.insert(preset: TimerPreset)`
-  - `TimerPresetDao.delete(preset: TimerPreset)`
-  - `IntervalDao.getSessions(): Flow<List<IntervalSessionWithSteps>>`
-  - `AlarmDao.getAll(): Flow<List<Alarm>>`
-  - `AlarmDao.upsert(alarm: Alarm): Long`
-  - `AlarmDao.delete(alarm: Alarm)`
+- Produces: `<AdBanner />` 컴포넌트 — 각 탭 하단에 삽입
+- Produces: 4탭 Bottom Navigation (타이머·스톱워치·인터벌·알람)
 
-- [ ] **Step 1: TimerPreset 엔티티 + DAO 작성**
+- [ ] **Step 1: app/_layout.tsx — 탭 네비게이션 작성**
 
-  `data/TimerPreset.kt`:
+  ```tsx
+  import { Tabs } from 'expo-router';
+  import { Ionicons } from '@expo/vector-icons';
 
-  ```kotlin
-  package com.multitimer.data
+  type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-  import androidx.room.*
-  import kotlinx.coroutines.flow.Flow
-
-  @Entity(tableName = "timer_presets")
-  data class TimerPreset(
-      @PrimaryKey(autoGenerate = true) val id: Long = 0,
-      val label: String,
-      val durationSeconds: Int
-  )
-
-  @Dao
-  interface TimerPresetDao {
-      @Query("SELECT * FROM timer_presets ORDER BY label ASC")
-      fun getAll(): Flow<List<TimerPreset>>
-
-      @Insert(onConflict = OnConflictStrategy.REPLACE)
-      suspend fun insert(preset: TimerPreset)
-
-      @Delete
-      suspend fun delete(preset: TimerPreset)
+  export default function TabLayout() {
+    return (
+      <Tabs screenOptions={{ tabBarActiveTintColor: '#007AFF' }}>
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: '타이머',
+            tabBarIcon: ({ color }) => <Ionicons name="timer-outline" size={24} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="stopwatch"
+          options={{
+            title: '스톱워치',
+            tabBarIcon: ({ color }) => <Ionicons name="stopwatch-outline" size={24} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="interval"
+          options={{
+            title: '인터벌',
+            tabBarIcon: ({ color }) => <Ionicons name="fitness-outline" size={24} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="alarm"
+          options={{
+            title: '알람',
+            tabBarIcon: ({ color }) => <Ionicons name="alarm-outline" size={24} color={color} />,
+          }}
+        />
+      </Tabs>
+    );
   }
   ```
 
-- [ ] **Step 2: IntervalSession + IntervalStep 엔티티 + DAO**
+- [ ] **Step 2: components/AdBanner.tsx 작성**
 
-  `data/IntervalSession.kt`:
+  ```tsx
+  import { Platform, View } from 'react-native';
+  import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
 
-  ```kotlin
-  package com.multitimer.data
+  const ANDROID_ID = TestIds.BANNER; // 출시 전 실 ID로 교체
+  const IOS_ID = TestIds.BANNER;
 
-  import androidx.room.*
-  import kotlinx.coroutines.flow.Flow
-
-  @Entity(tableName = "interval_sessions")
-  data class IntervalSession(
-      @PrimaryKey(autoGenerate = true) val id: Long = 0,
-      val label: String,
-      val repeatCount: Int = 1
-  )
-
-  @Entity(
-      tableName = "interval_steps",
-      foreignKeys = [ForeignKey(
-          entity = IntervalSession::class,
-          parentColumns = ["id"],
-          childColumns = ["sessionId"],
-          onDelete = ForeignKey.CASCADE
-      )]
-  )
-  data class IntervalStep(
-      @PrimaryKey(autoGenerate = true) val id: Long = 0,
-      val sessionId: Long,
-      val label: String,
-      val durationSeconds: Int,
-      val stepOrder: Int
-  )
-
-  data class IntervalSessionWithSteps(
-      @Embedded val session: IntervalSession,
-      @Relation(parentColumn = "id", entityColumn = "sessionId")
-      val steps: List<IntervalStep>
-  )
-
-  @Dao
-  interface IntervalDao {
-      @Transaction
-      @Query("SELECT * FROM interval_sessions")
-      fun getSessions(): Flow<List<IntervalSessionWithSteps>>
-
-      @Insert(onConflict = OnConflictStrategy.REPLACE)
-      suspend fun insertSession(session: IntervalSession): Long
-
-      @Insert(onConflict = OnConflictStrategy.REPLACE)
-      suspend fun insertSteps(steps: List<IntervalStep>)
-
-      @Delete
-      suspend fun deleteSession(session: IntervalSession)
-
-      @Query("DELETE FROM interval_steps WHERE sessionId = :sessionId")
-      suspend fun deleteStepsForSession(sessionId: Long)
+  export default function AdBanner() {
+    const adUnitId = Platform.OS === 'ios' ? IOS_ID : ANDROID_ID;
+    return (
+      <View style={{ alignItems: 'center' }}>
+        <BannerAd unitId={adUnitId} size={BannerAdSize.BANNER} />
+      </View>
+    );
   }
   ```
 
-- [ ] **Step 3: Alarm 엔티티 + DAO**
+- [ ] **Step 3: 탭 플레이스홀더 화면 4개 작성**
 
-  `data/Alarm.kt`:
-
-  ```kotlin
-  package com.multitimer.data
-
-  import androidx.room.*
-  import kotlinx.coroutines.flow.Flow
-
-  @Entity(tableName = "alarms")
-  data class Alarm(
-      @PrimaryKey(autoGenerate = true) val id: Long = 0,
-      val label: String = "",
-      val hour: Int,
-      val minute: Int,
-      val daysOfWeek: String = "",   // "1,3,5" 형식 (1=월 ~ 7=일), 빈 문자열=한 번만
-      val isEnabled: Boolean = true,
-      val ringtoneUri: String = ""   // 빈 문자열=기본 알람음
-  )
-
-  @Dao
-  interface AlarmDao {
-      @Query("SELECT * FROM alarms ORDER BY hour ASC, minute ASC")
-      fun getAll(): Flow<List<Alarm>>
-
-      @Query("SELECT * FROM alarms WHERE id = :id")
-      suspend fun getById(id: Long): Alarm?
-
-      @Insert(onConflict = OnConflictStrategy.REPLACE)
-      suspend fun upsert(alarm: Alarm): Long
-
-      @Delete
-      suspend fun delete(alarm: Alarm)
-
-      @Query("SELECT * FROM alarms WHERE isEnabled = 1")
-      suspend fun getEnabled(): List<Alarm>
+  `app/index.tsx`:
+  ```tsx
+  import { View, Text } from 'react-native';
+  import AdBanner from '@/components/AdBanner';
+  export default function TimerScreen() {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>타이머</Text>
+        <AdBanner />
+      </View>
+    );
   }
   ```
 
-- [ ] **Step 4: AppDatabase 작성**
-
-  `data/AppDatabase.kt`:
-
-  ```kotlin
-  package com.multitimer.data
-
-  import androidx.room.Database
-  import androidx.room.RoomDatabase
-
-  @Database(
-      entities = [TimerPreset::class, IntervalSession::class, IntervalStep::class, Alarm::class],
-      version = 1,
-      exportSchema = false
-  )
-  abstract class AppDatabase : RoomDatabase() {
-      abstract fun timerPresetDao(): TimerPresetDao
-      abstract fun intervalDao(): IntervalDao
-      abstract fun alarmDao(): AlarmDao
+  `app/stopwatch.tsx`:
+  ```tsx
+  import { View, Text } from 'react-native';
+  import AdBanner from '@/components/AdBanner';
+  export default function StopwatchScreen() {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>스톱워치</Text>
+        <AdBanner />
+      </View>
+    );
   }
   ```
 
-- [ ] **Step 5: Hilt AppModule 작성**
-
-  `di/AppModule.kt`:
-
-  ```kotlin
-  package com.multitimer.di
-
-  import android.content.Context
-  import androidx.room.Room
-  import com.multitimer.data.*
-  import dagger.Module
-  import dagger.Provides
-  import dagger.hilt.InstallIn
-  import dagger.hilt.android.qualifiers.ApplicationContext
-  import dagger.hilt.components.SingletonComponent
-  import javax.inject.Singleton
-
-  @Module
-  @InstallIn(SingletonComponent::class)
-  object AppModule {
-
-      @Provides
-      @Singleton
-      fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
-          Room.databaseBuilder(ctx, AppDatabase::class.java, "multitimer.db").build()
-
-      @Provides fun provideTimerPresetDao(db: AppDatabase): TimerPresetDao = db.timerPresetDao()
-      @Provides fun provideIntervalDao(db: AppDatabase): IntervalDao = db.intervalDao()
-      @Provides fun provideAlarmDao(db: AppDatabase): AlarmDao = db.alarmDao()
+  `app/interval.tsx`:
+  ```tsx
+  import { View, Text } from 'react-native';
+  import AdBanner from '@/components/AdBanner';
+  export default function IntervalScreen() {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>인터벌</Text>
+        <AdBanner />
+      </View>
+    );
   }
   ```
 
-- [ ] **Step 6: TimerPresetDao 단위 테스트 작성**
-
-  `test/com/multitimer/data/TimerPresetDaoTest.kt`:
-
-  ```kotlin
-  package com.multitimer.data
-
-  import android.content.Context
-  import androidx.room.Room
-  import androidx.test.core.app.ApplicationProvider
-  import androidx.test.ext.junit.runners.AndroidJUnit4
-  import kotlinx.coroutines.flow.first
-  import kotlinx.coroutines.test.runTest
-  import org.junit.After
-  import org.junit.Assert.assertEquals
-  import org.junit.Before
-  import org.junit.Test
-  import org.junit.runner.RunWith
-
-  @RunWith(AndroidJUnit4::class)
-  class TimerPresetDaoTest {
-      private lateinit var db: AppDatabase
-      private lateinit var dao: TimerPresetDao
-
-      @Before
-      fun setup() {
-          val ctx = ApplicationProvider.getApplicationContext<Context>()
-          db = Room.inMemoryDatabaseBuilder(ctx, AppDatabase::class.java).build()
-          dao = db.timerPresetDao()
-      }
-
-      @After
-      fun tearDown() = db.close()
-
-      @Test
-      fun insertAndGetPreset() = runTest {
-          val preset = TimerPreset(label = "라면", durationSeconds = 180)
-          dao.insert(preset)
-          val list = dao.getAll().first()
-          assertEquals(1, list.size)
-          assertEquals("라면", list[0].label)
-          assertEquals(180, list[0].durationSeconds)
-      }
-
-      @Test
-      fun deletePreset() = runTest {
-          val preset = TimerPreset(label = "운동", durationSeconds = 1800)
-          dao.insert(preset)
-          val inserted = dao.getAll().first()[0]
-          dao.delete(inserted)
-          val list = dao.getAll().first()
-          assertEquals(0, list.size)
-      }
+  `app/alarm.tsx`:
+  ```tsx
+  import { View, Text } from 'react-native';
+  import AdBanner from '@/components/AdBanner';
+  export default function AlarmScreen() {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>알람</Text>
+        <AdBanner />
+      </View>
+    );
   }
   ```
 
-- [ ] **Step 7: 테스트 실행**
+- [ ] **Step 4: 에뮬레이터/실기기 확인**
 
-  Android Studio → Run 'TimerPresetDaoTest'  
-  또는: `./gradlew connectedAndroidTest --tests "*.TimerPresetDaoTest"`  
-  예상: 2 tests PASSED
-
-- [ ] **Step 8: 커밋**
-
-  ```bash
-  git add app/src/
-  git commit -m "feat: Room database with TimerPreset, Interval, Alarm entities"
-  ```
-
----
-
-### Task 3: Theme & 알림 채널 설정
-
-**Files:**
-- Create: `ui/theme/Theme.kt`
-- Create: `notifications/NotificationHelper.kt`
-- Modify: `res/values/strings.xml`
-
-**Interfaces:**
-- Produces:
-  - `NotificationHelper.createChannels(context)` — 앱 시작 시 1회 호출
-  - `CHANNEL_TIMER = "timer_channel"`
-  - `CHANNEL_ALARM = "alarm_channel"`
-
-- [ ] **Step 1: Theme.kt 작성**
-
-  `ui/theme/Theme.kt`:
-
-  ```kotlin
-  package com.multitimer.ui.theme
-
-  import android.app.Activity
-  import android.os.Build
-  import androidx.compose.foundation.isSystemInDarkTheme
-  import androidx.compose.material3.*
-  import androidx.compose.runtime.Composable
-  import androidx.compose.runtime.SideEffect
-  import androidx.compose.ui.graphics.toArgb
-  import androidx.compose.ui.platform.LocalContext
-  import androidx.compose.ui.platform.LocalView
-  import androidx.core.view.WindowCompat
-
-  @Composable
-  fun MultiTimerTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-      val colorScheme = when {
-          Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-              val context = LocalContext.current
-              if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-          }
-          darkTheme -> darkColorScheme()
-          else -> lightColorScheme()
-      }
-      val view = LocalView.current
-      if (!view.isInEditMode) {
-          SideEffect {
-              val window = (view.context as Activity).window
-              window.statusBarColor = colorScheme.primary.toArgb()
-              WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
-          }
-      }
-      MaterialTheme(colorScheme = colorScheme, content = content)
-  }
-  ```
-
-- [ ] **Step 2: NotificationHelper.kt 작성**
-
-  `notifications/NotificationHelper.kt`:
-
-  ```kotlin
-  package com.multitimer.notifications
-
-  import android.app.NotificationChannel
-  import android.app.NotificationManager
-  import android.content.Context
-  import androidx.core.app.NotificationManagerCompat
-
-  object NotificationHelper {
-      const val CHANNEL_TIMER = "timer_channel"
-      const val CHANNEL_ALARM = "alarm_channel"
-
-      fun createChannels(context: Context) {
-          val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-          manager.createNotificationChannel(
-              NotificationChannel(CHANNEL_TIMER, "타이머", NotificationManager.IMPORTANCE_LOW).apply {
-                  description = "실행 중인 타이머 알림"
-              }
-          )
-          manager.createNotificationChannel(
-              NotificationChannel(CHANNEL_ALARM, "알람", NotificationManager.IMPORTANCE_HIGH).apply {
-                  description = "알람 트리거 알림"
-              }
-          )
-      }
-  }
-  ```
-
-- [ ] **Step 3: strings.xml 업데이트**
-
-  `res/values/strings.xml`:
-
-  ```xml
-  <resources>
-      <string name="app_name">MultiTimer</string>
-      <string name="tab_timer">타이머</string>
-      <string name="tab_stopwatch">스톱워치</string>
-      <string name="tab_interval">인터벌</string>
-      <string name="tab_alarm">알람</string>
-  </resources>
-  ```
-
-- [ ] **Step 4: MainActivity.kt 작성**
-
-  `MainActivity.kt`:
-
-  ```kotlin
-  package com.multitimer
-
-  import android.Manifest
-  import android.os.Build
-  import android.os.Bundle
-  import androidx.activity.ComponentActivity
-  import androidx.activity.compose.setContent
-  import androidx.activity.result.contract.ActivityResultContracts
-  import com.multitimer.navigation.NavGraph
-  import com.multitimer.notifications.NotificationHelper
-  import com.multitimer.ui.theme.MultiTimerTheme
-  import dagger.hilt.android.AndroidEntryPoint
-
-  @AndroidEntryPoint
-  class MainActivity : ComponentActivity() {
-
-      private val notifPermission = registerForActivityResult(
-          ActivityResultContracts.RequestPermission()
-      ) { /* 허용 여부와 무관하게 앱 계속 실행 */ }
-
-      override fun onCreate(savedInstanceState: Bundle?) {
-          super.onCreate(savedInstanceState)
-          NotificationHelper.createChannels(this)
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-              notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-          }
-          setContent {
-              MultiTimerTheme {
-                  NavGraph()
-              }
-          }
-      }
-  }
-  ```
+  `npx expo start` → 4탭 네비게이션 + 하단 배너 자리 확인
 
 - [ ] **Step 5: 커밋**
 
   ```bash
-  git add app/src/
-  git commit -m "feat: Material3 theme, notification channels, MainActivity"
+  git add app/ components/
+  git commit -m "feat: tab navigation and AdMob banner component"
+  git push
   ```
 
 ---
 
-### Task 4: AdMob 배너 컴포넌트 & Navigation Shell
+### Task 3: Zustand 스토어 + AsyncStorage 영속화
 
 **Files:**
-- Create: `ui/AdBanner.kt`
-- Create: `navigation/NavGraph.kt`
+- Create: `utils/storage.ts`
+- Create: `store/timerStore.ts`
+- Create: `store/stopwatchStore.ts`
+- Create: `store/intervalStore.ts`
+- Create: `store/alarmStore.ts`
 
 **Interfaces:**
 - Produces:
-  - `@Composable fun AdBanner()` — 각 탭 하단에 삽입
-  - `@Composable fun NavGraph()` — 4탭 Bottom Navigation
+  - `useTimerStore()` — `timers`, `presets`, `addTimer()`, `startTimer()`, `pauseTimer()`, `resetTimer()`, `removeTimer()`, `savePreset()`, `deletePreset()`
+  - `useStopwatchStore()` — `elapsed`, `laps`, `isRunning`, `start()`, `stop()`, `lap()`, `reset()`
+  - `useIntervalStore()` — `sessions`, `addSession()`, `deleteSession()`
+  - `useAlarmStore()` — `alarms`, `addAlarm()`, `updateAlarm()`, `deleteAlarm()`, `toggleAlarm()`
 
-- [ ] **Step 1: AdBanner 컴포저블 작성**
+- [ ] **Step 1: utils/storage.ts 작성**
 
-  `ui/AdBanner.kt`:
+  ```typescript
+  import AsyncStorage from '@react-native-async-storage/async-storage';
 
-  ```kotlin
-  package com.multitimer.ui
+  export async function loadItem<T>(key: string, fallback: T): Promise<T> {
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as T) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
 
-  import androidx.compose.runtime.Composable
-  import androidx.compose.ui.viewinterop.AndroidView
-  import com.google.android.gms.ads.AdRequest
-  import com.google.android.gms.ads.AdSize
-  import com.google.android.gms.ads.AdView
-
-  @Composable
-  fun AdBanner() {
-      AndroidView(factory = { context ->
-          AdView(context).apply {
-              setAdSize(AdSize.BANNER)
-              adUnitId = "ca-app-pub-3940256099942544/6300978111" // 테스트 ID
-              loadAd(AdRequest.Builder().build())
-          }
-      })
+  export async function saveItem<T>(key: string, value: T): Promise<void> {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
   }
   ```
 
-- [ ] **Step 2: NavGraph.kt 작성**
+- [ ] **Step 2: store/timerStore.ts 작성**
 
-  `navigation/NavGraph.kt`:
+  ```typescript
+  import { create } from 'zustand';
+  import { loadItem, saveItem } from '@/utils/storage';
+  import uuid from 'react-native-uuid'; // 또는 Math.random() 기반 ID
 
-  ```kotlin
-  package com.multitimer.navigation
+  export type TimerItem = {
+    id: string;
+    label: string;
+    totalSeconds: number;
+    remainingSeconds: number;
+    isRunning: boolean;
+    endTime: number | null; // 백그라운드 복원용 (epoch ms)
+  };
 
-  import androidx.compose.foundation.layout.*
-  import androidx.compose.material.icons.Icons
-  import androidx.compose.material.icons.filled.*
-  import androidx.compose.material3.*
-  import androidx.compose.runtime.*
-  import androidx.compose.ui.Modifier
-  import androidx.navigation.NavDestination.Companion.hierarchy
-  import androidx.navigation.NavGraph.Companion.findStartDestination
-  import androidx.navigation.compose.*
-  import com.multitimer.alarm.AlarmScreen
-  import com.multitimer.interval.IntervalScreen
-  import com.multitimer.stopwatch.StopwatchScreen
-  import com.multitimer.timer.TimerScreen
-  import com.multitimer.ui.AdBanner
+  export type TimerPreset = {
+    id: string;
+    label: string;
+    durationSeconds: number;
+  };
 
-  sealed class Screen(val route: String, val label: String) {
-      object Timer : Screen("timer", "타이머")
-      object Stopwatch : Screen("stopwatch", "스톱워치")
-      object Interval : Screen("interval", "인터벌")
-      object Alarm : Screen("alarm", "알람")
+  type TimerStore = {
+    timers: TimerItem[];
+    presets: TimerPreset[];
+    hydrated: boolean;
+    hydrate: () => Promise<void>;
+    addTimer: (label: string, durationSeconds: number) => void;
+    startTimer: (id: string) => void;
+    pauseTimer: (id: string) => void;
+    resetTimer: (id: string) => void;
+    removeTimer: (id: string) => void;
+    tickTimer: (id: string) => void;
+    savePreset: (label: string, durationSeconds: number) => void;
+    deletePreset: (id: string) => void;
+  };
+
+  function genId(): string {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
   }
 
-  @Composable
-  fun NavGraph() {
-      val navController = rememberNavController()
-      val items = listOf(Screen.Timer, Screen.Stopwatch, Screen.Interval, Screen.Alarm)
-      val icons = listOf(Icons.Default.Timer, Icons.Default.Restore, Icons.Default.FitnessCenter, Icons.Default.Alarm)
+  export const useTimerStore = create<TimerStore>((set, get) => ({
+    timers: [],
+    presets: [],
+    hydrated: false,
 
-      Scaffold(
-          bottomBar = {
-              Column {
-                  AdBanner()
-                  NavigationBar {
-                      val currentBack by navController.currentBackStackEntryAsState()
-                      val current = currentBack?.destination
-                      items.forEachIndexed { i, screen ->
-                          NavigationBarItem(
-                              icon = { Icon(icons[i], contentDescription = screen.label) },
-                              label = { Text(screen.label) },
-                              selected = current?.hierarchy?.any { it.route == screen.route } == true,
-                              onClick = {
-                                  navController.navigate(screen.route) {
-                                      popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                      launchSingleTop = true
-                                      restoreState = true
-                                  }
-                              }
-                          )
-                      }
-                  }
-              }
-          }
-      ) { padding ->
-          NavHost(navController, startDestination = Screen.Timer.route, Modifier.padding(padding)) {
-              composable(Screen.Timer.route) { TimerScreen() }
-              composable(Screen.Stopwatch.route) { StopwatchScreen() }
-              composable(Screen.Interval.route) { IntervalScreen() }
-              composable(Screen.Alarm.route) { AlarmScreen() }
-          }
-      }
-  }
+    hydrate: async () => {
+      const presets = await loadItem<TimerPreset[]>('timer_presets', []);
+      set({ presets, hydrated: true });
+    },
+
+    addTimer: (label, durationSeconds) =>
+      set((s) => ({
+        timers: [...s.timers, {
+          id: genId(), label, totalSeconds: durationSeconds,
+          remainingSeconds: durationSeconds, isRunning: false, endTime: null,
+        }],
+      })),
+
+    startTimer: (id) =>
+      set((s) => ({
+        timers: s.timers.map((t) =>
+          t.id === id
+            ? { ...t, isRunning: true, endTime: Date.now() + t.remainingSeconds * 1000 }
+            : t
+        ),
+      })),
+
+    pauseTimer: (id) =>
+      set((s) => ({
+        timers: s.timers.map((t) =>
+          t.id === id ? { ...t, isRunning: false, endTime: null } : t
+        ),
+      })),
+
+    resetTimer: (id) =>
+      set((s) => ({
+        timers: s.timers.map((t) =>
+          t.id === id
+            ? { ...t, remainingSeconds: t.totalSeconds, isRunning: false, endTime: null }
+            : t
+        ),
+      })),
+
+    removeTimer: (id) =>
+      set((s) => ({ timers: s.timers.filter((t) => t.id !== id) })),
+
+    tickTimer: (id) =>
+      set((s) => ({
+        timers: s.timers.map((t) => {
+          if (t.id !== id || !t.isRunning) return t;
+          const remaining = t.endTime
+            ? Math.max(0, Math.round((t.endTime - Date.now()) / 1000))
+            : Math.max(0, t.remainingSeconds - 1);
+          return { ...t, remainingSeconds: remaining, isRunning: remaining > 0 };
+        }),
+      })),
+
+    savePreset: (label, durationSeconds) => {
+      const preset: TimerPreset = { id: genId(), label, durationSeconds };
+      set((s) => {
+        const updated = [...s.presets, preset];
+        saveItem('timer_presets', updated);
+        return { presets: updated };
+      });
+    },
+
+    deletePreset: (id) =>
+      set((s) => {
+        const updated = s.presets.filter((p) => p.id !== id);
+        saveItem('timer_presets', updated);
+        return { presets: updated };
+      }),
+  }));
   ```
 
-- [ ] **Step 3: 각 탭 화면 플레이스홀더 생성**
+- [ ] **Step 3: store/stopwatchStore.ts 작성**
 
-  다음 4개 파일 생성 (이후 Task에서 교체):
+  ```typescript
+  import { create } from 'zustand';
 
-  `timer/TimerScreen.kt`:
-  ```kotlin
-  package com.multitimer.timer
-  import androidx.compose.material3.Text
-  import androidx.compose.runtime.Composable
-  @Composable fun TimerScreen() { Text("타이머") }
+  type StopwatchStore = {
+    elapsed: number;
+    laps: number[];
+    isRunning: boolean;
+    startedAt: number | null;
+    baseElapsed: number;
+    start: () => void;
+    stop: () => void;
+    lap: () => void;
+    reset: () => void;
+    tick: () => void;
+  };
+
+  export const useStopwatchStore = create<StopwatchStore>((set, get) => ({
+    elapsed: 0,
+    laps: [],
+    isRunning: false,
+    startedAt: null,
+    baseElapsed: 0,
+
+    start: () => set({ isRunning: true, startedAt: Date.now() }),
+
+    stop: () =>
+      set((s) => ({
+        isRunning: false,
+        baseElapsed: s.elapsed,
+        startedAt: null,
+      })),
+
+    lap: () =>
+      set((s) => ({ laps: [s.elapsed, ...s.laps] })),
+
+    reset: () =>
+      set({ elapsed: 0, laps: [], isRunning: false, startedAt: null, baseElapsed: 0 }),
+
+    tick: () =>
+      set((s) => ({
+        elapsed: s.startedAt ? s.baseElapsed + (Date.now() - s.startedAt) : s.elapsed,
+      })),
+  }));
   ```
 
-  `stopwatch/StopwatchScreen.kt`:
-  ```kotlin
-  package com.multitimer.stopwatch
-  import androidx.compose.material3.Text
-  import androidx.compose.runtime.Composable
-  @Composable fun StopwatchScreen() { Text("스톱워치") }
+- [ ] **Step 4: store/intervalStore.ts 작성**
+
+  ```typescript
+  import { create } from 'zustand';
+  import { loadItem, saveItem } from '@/utils/storage';
+
+  export type IntervalStep = { id: string; label: string; durationSeconds: number };
+  export type IntervalSession = { id: string; label: string; steps: IntervalStep[]; repeatCount: number };
+
+  type IntervalStore = {
+    sessions: IntervalSession[];
+    hydrated: boolean;
+    hydrate: () => Promise<void>;
+    addSession: (session: Omit<IntervalSession, 'id'>) => void;
+    deleteSession: (id: string) => void;
+  };
+
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+  export const useIntervalStore = create<IntervalStore>((set) => ({
+    sessions: [],
+    hydrated: false,
+
+    hydrate: async () => {
+      const sessions = await loadItem<IntervalSession[]>('interval_sessions', []);
+      set({ sessions, hydrated: true });
+    },
+
+    addSession: (session) =>
+      set((s) => {
+        const newSession = { ...session, id: genId(), steps: session.steps.map(step => ({ ...step, id: genId() })) };
+        const updated = [...s.sessions, newSession];
+        saveItem('interval_sessions', updated);
+        return { sessions: updated };
+      }),
+
+    deleteSession: (id) =>
+      set((s) => {
+        const updated = s.sessions.filter((s) => s.id !== id);
+        saveItem('interval_sessions', updated);
+        return { sessions: updated };
+      }),
+  }));
   ```
 
-  `interval/IntervalScreen.kt`:
-  ```kotlin
-  package com.multitimer.interval
-  import androidx.compose.material3.Text
-  import androidx.compose.runtime.Composable
-  @Composable fun IntervalScreen() { Text("인터벌") }
+- [ ] **Step 5: store/alarmStore.ts 작성**
+
+  ```typescript
+  import { create } from 'zustand';
+  import { loadItem, saveItem } from '@/utils/storage';
+
+  export type Alarm = {
+    id: string;
+    label: string;
+    hour: number;
+    minute: number;
+    daysOfWeek: number[]; // 0=일 ~ 6=토
+    isEnabled: boolean;
+    notifId?: string; // expo-notifications identifier
+  };
+
+  type AlarmStore = {
+    alarms: Alarm[];
+    hydrated: boolean;
+    hydrate: () => Promise<void>;
+    addAlarm: (alarm: Omit<Alarm, 'id'>) => Alarm;
+    updateAlarm: (alarm: Alarm) => void;
+    deleteAlarm: (id: string) => void;
+    toggleAlarm: (id: string) => Alarm | undefined;
+  };
+
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+  export const useAlarmStore = create<AlarmStore>((set, get) => ({
+    alarms: [],
+    hydrated: false,
+
+    hydrate: async () => {
+      const alarms = await loadItem<Alarm[]>('alarms', []);
+      set({ alarms, hydrated: true });
+    },
+
+    addAlarm: (alarm) => {
+      const newAlarm = { ...alarm, id: genId() };
+      set((s) => {
+        const updated = [...s.alarms, newAlarm];
+        saveItem('alarms', updated);
+        return { alarms: updated };
+      });
+      return newAlarm;
+    },
+
+    updateAlarm: (alarm) =>
+      set((s) => {
+        const updated = s.alarms.map((a) => (a.id === alarm.id ? alarm : a));
+        saveItem('alarms', updated);
+        return { alarms: updated };
+      }),
+
+    deleteAlarm: (id) =>
+      set((s) => {
+        const updated = s.alarms.filter((a) => a.id !== id);
+        saveItem('alarms', updated);
+        return { alarms: updated };
+      }),
+
+    toggleAlarm: (id) => {
+      const alarm = get().alarms.find((a) => a.id === id);
+      if (!alarm) return undefined;
+      const updated = { ...alarm, isEnabled: !alarm.isEnabled };
+      set((s) => {
+        const list = s.alarms.map((a) => (a.id === id ? updated : a));
+        saveItem('alarms', list);
+        return { alarms: list };
+      });
+      return updated;
+    },
+  }));
   ```
 
-  `alarm/AlarmScreen.kt`:
-  ```kotlin
-  package com.multitimer.alarm
-  import androidx.compose.material3.Text
-  import androidx.compose.runtime.Composable
-  @Composable fun AlarmScreen() { Text("알람") }
-  ```
-
-- [ ] **Step 4: 빌드 & 에뮬레이터 실행**
-
-  에뮬레이터(API 26+)에서 실행 → 하단 탭 4개 + 배너 광고 확인  
-  예상: 탭 전환 동작, 배너 자리에 테스트 광고 표시
-
-- [ ] **Step 5: 커밋**
+- [ ] **Step 6: 커밋**
 
   ```bash
-  git add app/src/
-  git commit -m "feat: bottom navigation shell with AdMob banner"
+  git add store/ utils/
+  git commit -m "feat: Zustand stores with AsyncStorage persistence"
+  git push
   ```
 
 ---
 
-### Task 5: 타이머 — Foreground Service & ViewModel
+### Task 4: 타이머 탭 (다중 타이머 + 프리셋)
 
 **Files:**
-- Create: `timer/TimerService.kt`
-- Create: `timer/TimerViewModel.kt`
+- Modify: `app/index.tsx`
+- Create: `components/TimerCard.tsx`
+- Create: `components/AddTimerModal.tsx`
+- Create: `utils/notifications.ts` (타이머 완료 알림)
 
 **Interfaces:**
-- Produces:
-  - `TimerService`: Intent action `ACTION_START`, `ACTION_PAUSE`, `ACTION_RESET` (extra: `EXTRA_TIMER_ID`, `EXTRA_DURATION`)
-  - `TimerViewModel.timers: StateFlow<List<TimerState>>`
-  - `TimerViewModel.addTimer(label: String, durationSeconds: Int)`
-  - `TimerViewModel.startTimer(id: String)`
-  - `TimerViewModel.pauseTimer(id: String)`
-  - `TimerViewModel.resetTimer(id: String)`
+- Consumes: `useTimerStore()`
+- Produces: 다중 타이머 카드 UI, 프리셋 저장/불러오기, 백그라운드 알림
 
-- [ ] **Step 1: TimerState 데이터 클래스 정의**
+- [ ] **Step 1: utils/notifications.ts 작성**
 
-  `timer/TimerService.kt` 상단에:
+  ```typescript
+  import * as Notifications from 'expo-notifications';
+  import { Platform } from 'react-native';
 
-  ```kotlin
-  package com.multitimer.timer
+  export async function requestNotificationPermission(): Promise<boolean> {
+    const { status } = await Notifications.requestPermissionsAsync();
+    return status === 'granted';
+  }
 
-  import android.app.*
-  import android.content.Intent
-  import android.os.*
-  import androidx.core.app.NotificationCompat
-  import com.multitimer.MainActivity
-  import com.multitimer.notifications.NotificationHelper
-  import kotlinx.coroutines.*
-  import kotlinx.coroutines.flow.MutableStateFlow
-  import kotlinx.coroutines.flow.StateFlow
+  export async function scheduleTimerNotification(
+    id: string,
+    label: string,
+    secondsFromNow: number
+  ): Promise<string> {
+    return Notifications.scheduleNotificationAsync({
+      identifier: `timer_${id}`,
+      content: { title: '타이머 완료', body: `${label} 완료!`, sound: true },
+      trigger: { seconds: secondsFromNow, type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL },
+    });
+  }
 
-  data class TimerState(
-      val id: String,
-      val label: String,
-      val totalSeconds: Int,
-      val remainingSeconds: Int,
-      val isRunning: Boolean
-  ) {
-      val isFinished: Boolean get() = remainingSeconds <= 0
+  export async function cancelNotification(identifier: string): Promise<void> {
+    await Notifications.cancelScheduledNotificationAsync(identifier);
+  }
+
+  export async function scheduleAlarmNotification(
+    id: string,
+    label: string,
+    hour: number,
+    minute: number,
+    repeats: boolean
+  ): Promise<string> {
+    return Notifications.scheduleNotificationAsync({
+      identifier: `alarm_${id}`,
+      content: { title: '알람', body: label || '알람이 울립니다', sound: true },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+        hour,
+        minute,
+        second: 0,
+        repeats,
+      },
+    });
   }
   ```
 
-- [ ] **Step 2: TimerService 구현**
+- [ ] **Step 2: components/TimerCard.tsx 작성**
 
-  ```kotlin
-  class TimerService : Service() {
-      companion object {
-          const val ACTION_START = "START"
-          const val ACTION_PAUSE = "PAUSE"
-          const val ACTION_RESET = "RESET"
-          const val ACTION_REMOVE = "REMOVE"
-          const val EXTRA_TIMER_ID = "timer_id"
-          const val EXTRA_DURATION = "duration"
-          const val EXTRA_LABEL = "label"
+  ```tsx
+  import React, { useEffect, useRef } from 'react';
+  import { View, Text, TouchableOpacity, StyleSheet, useColorScheme } from 'react-native';
+  import { useTimerStore, TimerItem } from '@/store/timerStore';
+  import { formatTime } from '@/utils/time';
+  import { scheduleTimerNotification, cancelNotification } from '@/utils/notifications';
 
-          private val _timers = MutableStateFlow<Map<String, TimerState>>(emptyMap())
-          val timers: StateFlow<Map<String, TimerState>> = _timers
+  type Props = { timer: TimerItem };
+
+  export default function TimerCard({ timer }: Props) {
+    const { startTimer, pauseTimer, resetTimer, removeTimer, tickTimer } = useTimerStore();
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const scheme = useColorScheme();
+    const isDark = scheme === 'dark';
+
+    useEffect(() => {
+      if (timer.isRunning) {
+        intervalRef.current = setInterval(() => tickTimer(timer.id), 1000);
+      } else {
+        if (intervalRef.current) clearInterval(intervalRef.current);
       }
+      return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    }, [timer.isRunning]);
 
-      private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
-      private val jobs = mutableMapOf<String, Job>()
-      private val binder = LocalBinder()
-
-      inner class LocalBinder : Binder() {
-          fun getService(): TimerService = this@TimerService
+    useEffect(() => {
+      if (timer.remainingSeconds === 0 && !timer.isRunning) {
+        cancelNotification(`timer_${timer.id}`);
       }
+    }, [timer.remainingSeconds]);
 
-      override fun onBind(intent: Intent?): IBinder = binder
+    const handleStart = async () => {
+      startTimer(timer.id);
+      await scheduleTimerNotification(timer.id, timer.label, timer.remainingSeconds);
+    };
 
-      override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-          val id = intent?.getStringExtra(EXTRA_TIMER_ID) ?: return START_NOT_STICKY
-          when (intent.action) {
-              ACTION_START -> startTimer(
-                  id,
-                  intent.getStringExtra(EXTRA_LABEL) ?: "",
-                  intent.getIntExtra(EXTRA_DURATION, 0)
-              )
-              ACTION_PAUSE -> pauseTimer(id)
-              ACTION_RESET -> resetTimer(id)
-              ACTION_REMOVE -> removeTimer(id)
-          }
-          return START_NOT_STICKY
-      }
+    const handlePause = async () => {
+      pauseTimer(timer.id);
+      await cancelNotification(`timer_${timer.id}`);
+    };
 
-      private fun startTimer(id: String, label: String, durationSeconds: Int) {
-          val existing = _timers.value[id]
-          val state = existing ?: TimerState(id, label, durationSeconds, durationSeconds, false)
-          _timers.value = _timers.value + (id to state.copy(isRunning = true))
+    const handleReset = async () => {
+      resetTimer(timer.id);
+      await cancelNotification(`timer_${timer.id}`);
+    };
 
-          jobs[id]?.cancel()
-          jobs[id] = serviceScope.launch {
-              while (true) {
-                  delay(1000)
-                  val current = _timers.value[id] ?: break
-                  if (!current.isRunning) break
-                  val next = current.copy(remainingSeconds = current.remainingSeconds - 1)
-                  _timers.value = _timers.value + (id to next)
-                  if (next.isFinished) {
-                      onTimerFinished(next)
-                      break
-                  }
-              }
-              updateForeground()
-          }
-          startForeground(1, buildNotification())
-      }
+    const progress = timer.totalSeconds > 0 ? timer.remainingSeconds / timer.totalSeconds : 0;
+    const isFinished = timer.remainingSeconds === 0;
 
-      private fun pauseTimer(id: String) {
-          jobs[id]?.cancel()
-          _timers.value = _timers.value[id]?.let { state ->
-              _timers.value + (id to state.copy(isRunning = false))
-          } ?: _timers.value
-          updateForeground()
-      }
-
-      private fun resetTimer(id: String) {
-          jobs[id]?.cancel()
-          _timers.value = _timers.value[id]?.let { state ->
-              _timers.value + (id to state.copy(remainingSeconds = state.totalSeconds, isRunning = false))
-          } ?: _timers.value
-          updateForeground()
-      }
-
-      private fun removeTimer(id: String) {
-          jobs[id]?.cancel()
-          jobs.remove(id)
-          _timers.value = _timers.value - id
-          if (_timers.value.isEmpty()) stopSelf()
-          else updateForeground()
-      }
-
-      private fun onTimerFinished(state: TimerState) {
-          _timers.value = _timers.value + (state.id to state.copy(isRunning = false))
-          val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-          val notification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_ALARM)
-              .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-              .setContentTitle("타이머 완료")
-              .setContentText("${state.label} 완료!")
-              .setAutoCancel(true)
-              .build()
-          manager.notify(state.id.hashCode(), notification)
-      }
-
-      private fun buildNotification(): Notification {
-          val intent = Intent(this, MainActivity::class.java)
-          val pi = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-          val running = _timers.value.values.filter { it.isRunning }
-          val text = if (running.isEmpty()) "일시정지" else running.joinToString { it.label }
-          return NotificationCompat.Builder(this, NotificationHelper.CHANNEL_TIMER)
-              .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-              .setContentTitle("타이머 실행 중")
-              .setContentText(text)
-              .setContentIntent(pi)
-              .setOngoing(true)
-              .build()
-      }
-
-      private fun updateForeground() {
-          val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-          manager.notify(1, buildNotification())
-      }
-
-      override fun onDestroy() {
-          serviceScope.cancel()
-          super.onDestroy()
-      }
+    return (
+      <View style={[styles.card, isDark && styles.cardDark]}>
+        <View style={styles.header}>
+          <Text style={[styles.label, isDark && styles.textDark]}>{timer.label}</Text>
+          <TouchableOpacity onPress={() => removeTimer(timer.id)}>
+            <Text style={styles.remove}>✕</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.progressBg}>
+          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        </View>
+        <Text style={[styles.time, isDark && styles.textDark, isFinished && styles.finished]}>
+          {formatTime(timer.remainingSeconds)}
+        </Text>
+        <View style={styles.controls}>
+          <TouchableOpacity style={styles.btn} onPress={handleReset}>
+            <Text style={styles.btnText}>↺</Text>
+          </TouchableOpacity>
+          {timer.isRunning ? (
+            <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handlePause}>
+              <Text style={styles.btnText}>⏸</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={handleStart}>
+              <Text style={styles.btnText}>{isFinished ? '↺' : '▶'}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
   }
+
+  const styles = StyleSheet.create({
+    card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8 },
+    cardDark: { backgroundColor: '#1c1c1e' },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+    label: { fontSize: 16, fontWeight: '600', color: '#000' },
+    textDark: { color: '#fff' },
+    remove: { fontSize: 18, color: '#999', padding: 4 },
+    progressBg: { height: 4, backgroundColor: '#e0e0e0', borderRadius: 2, marginBottom: 12 },
+    progressFill: { height: 4, backgroundColor: '#007AFF', borderRadius: 2 },
+    time: { fontSize: 48, fontWeight: '200', textAlign: 'center', color: '#000', letterSpacing: 2, marginBottom: 12 },
+    finished: { color: '#FF3B30' },
+    controls: { flexDirection: 'row', justifyContent: 'center', gap: 16 },
+    btn: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center' },
+    btnPrimary: { backgroundColor: '#007AFF' },
+    btnText: { fontSize: 20 },
+  });
   ```
 
-- [ ] **Step 3: TimerViewModel 작성**
+- [ ] **Step 3: components/AddTimerModal.tsx 작성**
 
-  `timer/TimerViewModel.kt`:
+  ```tsx
+  import React, { useState } from 'react';
+  import { View, Text, TextInput, TouchableOpacity, Modal, ScrollView, StyleSheet, useColorScheme } from 'react-native';
+  import { useTimerStore, TimerPreset } from '@/store/timerStore';
 
-  ```kotlin
-  package com.multitimer.timer
+  type Props = { visible: boolean; onClose: () => void };
 
-  import android.app.Application
-  import android.content.Intent
-  import androidx.lifecycle.AndroidViewModel
-  import com.multitimer.data.TimerPreset
-  import com.multitimer.data.TimerPresetDao
-  import dagger.hilt.android.lifecycle.HiltViewModel
-  import kotlinx.coroutines.CoroutineScope
-  import kotlinx.coroutines.Dispatchers
-  import kotlinx.coroutines.flow.SharingStarted
-  import kotlinx.coroutines.flow.StateFlow
-  import kotlinx.coroutines.flow.map
-  import kotlinx.coroutines.flow.stateIn
-  import kotlinx.coroutines.launch
-  import java.util.UUID
-  import javax.inject.Inject
+  export default function AddTimerModal({ visible, onClose }: Props) {
+    const { addTimer, savePreset, deletePreset, presets } = useTimerStore();
+    const [label, setLabel] = useState('');
+    const [hours, setHours] = useState('0');
+    const [minutes, setMinutes] = useState('0');
+    const [seconds, setSeconds] = useState('0');
+    const isDark = useColorScheme() === 'dark';
 
-  @HiltViewModel
-  class TimerViewModel @Inject constructor(
-      app: Application,
-      private val presetDao: TimerPresetDao
-  ) : AndroidViewModel(app) {
+    const totalSeconds = (parseInt(hours) || 0) * 3600 + (parseInt(minutes) || 0) * 60 + (parseInt(seconds) || 0);
 
-      private val context get() = getApplication<Application>()
-      private val scope = CoroutineScope(Dispatchers.IO)
+    const handleAdd = () => {
+      if (totalSeconds <= 0) return;
+      addTimer(label || '타이머', totalSeconds);
+      onClose();
+    };
 
-      val timers: StateFlow<List<TimerState>> = TimerService.timers
-          .map { it.values.toList() }
-          .stateIn(scope, SharingStarted.Eagerly, emptyList())
+    const handlePreset = (preset: TimerPreset) => {
+      addTimer(preset.label, preset.durationSeconds);
+      onClose();
+    };
 
-      val presets = presetDao.getAll().stateIn(scope, SharingStarted.Eagerly, emptyList())
-
-      fun addTimer(label: String, durationSeconds: Int) {
-          val id = UUID.randomUUID().toString()
-          val intent = Intent(context, TimerService::class.java).apply {
-              action = TimerService.ACTION_START
-              putExtra(TimerService.EXTRA_TIMER_ID, id)
-              putExtra(TimerService.EXTRA_LABEL, label)
-              putExtra(TimerService.EXTRA_DURATION, durationSeconds)
-          }
-          context.startForegroundService(intent)
-      }
-
-      fun start(id: String) = sendAction(TimerService.ACTION_START, id)
-      fun pause(id: String) = sendAction(TimerService.ACTION_PAUSE, id)
-      fun reset(id: String) = sendAction(TimerService.ACTION_RESET, id)
-      fun remove(id: String) = sendAction(TimerService.ACTION_REMOVE, id)
-
-      fun savePreset(label: String, durationSeconds: Int) {
-          scope.launch { presetDao.insert(TimerPreset(label = label, durationSeconds = durationSeconds)) }
-      }
-
-      fun deletePreset(preset: TimerPreset) {
-          scope.launch { presetDao.delete(preset) }
-      }
-
-      private fun sendAction(action: String, id: String) {
-          val intent = Intent(context, TimerService::class.java).apply {
-              this.action = action
-              putExtra(TimerService.EXTRA_TIMER_ID, id)
-          }
-          context.startService(intent)
-      }
+    return (
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <View style={[styles.container, isDark && styles.containerDark]}>
+          <View style={styles.header}>
+            <Text style={[styles.title, isDark && styles.textDark]}>타이머 추가</Text>
+            <TouchableOpacity onPress={onClose}><Text style={styles.close}>✕</Text></TouchableOpacity>
+          </View>
+          <TextInput style={[styles.input, isDark && styles.inputDark]} placeholder="이름 (선택)" placeholderTextColor="#999" value={label} onChangeText={setLabel} />
+          <View style={styles.timeRow}>
+            <View style={styles.timeField}>
+              <TextInput style={[styles.input, isDark && styles.inputDark]} keyboardType="numeric" value={hours} onChangeText={setHours} />
+              <Text style={[styles.timeLabel, isDark && styles.textDark]}>시</Text>
+            </View>
+            <View style={styles.timeField}>
+              <TextInput style={[styles.input, isDark && styles.inputDark]} keyboardType="numeric" value={minutes} onChangeText={setMinutes} />
+              <Text style={[styles.timeLabel, isDark && styles.textDark]}>분</Text>
+            </View>
+            <View style={styles.timeField}>
+              <TextInput style={[styles.input, isDark && styles.inputDark]} keyboardType="numeric" value={seconds} onChangeText={setSeconds} />
+              <Text style={[styles.timeLabel, isDark && styles.textDark]}>초</Text>
+            </View>
+          </View>
+          <View style={styles.btnRow}>
+            <TouchableOpacity style={styles.saveBtn} onPress={() => { if (totalSeconds > 0) savePreset(label || '타이머', totalSeconds); }}>
+              <Text style={styles.saveBtnText}>프리셋 저장</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addBtn} onPress={handleAdd}>
+              <Text style={styles.addBtnText}>시작</Text>
+            </TouchableOpacity>
+          </View>
+          {presets.length > 0 && (
+            <>
+              <Text style={[styles.presetTitle, isDark && styles.textDark]}>프리셋</Text>
+              <ScrollView>
+                {presets.map((p) => (
+                  <View key={p.id} style={styles.presetRow}>
+                    <TouchableOpacity style={{ flex: 1 }} onPress={() => handlePreset(p)}>
+                      <Text style={[styles.presetName, isDark && styles.textDark]}>{p.label}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => deletePreset(p.id)}>
+                      <Text style={{ color: '#FF3B30', padding: 8 }}>삭제</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          )}
+        </View>
+      </Modal>
+    );
   }
+
+  const styles = StyleSheet.create({
+    container: { flex: 1, padding: 24, backgroundColor: '#fff' },
+    containerDark: { backgroundColor: '#1c1c1e' },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    title: { fontSize: 20, fontWeight: '700', color: '#000' },
+    textDark: { color: '#fff' },
+    close: { fontSize: 24, color: '#999' },
+    input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 12, color: '#000', backgroundColor: '#f9f9f9' },
+    inputDark: { borderColor: '#444', color: '#fff', backgroundColor: '#2c2c2e' },
+    timeRow: { flexDirection: 'row', gap: 12 },
+    timeField: { flex: 1 },
+    timeLabel: { textAlign: 'center', color: '#666', marginBottom: 12 },
+    btnRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+    saveBtn: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#007AFF', alignItems: 'center' },
+    saveBtnText: { color: '#007AFF', fontWeight: '600' },
+    addBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#007AFF', alignItems: 'center' },
+    addBtnText: { color: '#fff', fontWeight: '600' },
+    presetTitle: { fontSize: 16, fontWeight: '600', color: '#000', marginTop: 24, marginBottom: 8 },
+    presetRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee' },
+    presetName: { fontSize: 16, color: '#000' },
+  });
   ```
 
-- [ ] **Step 4: 커밋**
+- [ ] **Step 4: app/index.tsx 완성**
+
+  ```tsx
+  import React, { useEffect, useState } from 'react';
+  import { View, ScrollView, TouchableOpacity, Text, StyleSheet, useColorScheme } from 'react-native';
+  import { SafeAreaView } from 'react-native-safe-area-context';
+  import { useTimerStore } from '@/store/timerStore';
+  import TimerCard from '@/components/TimerCard';
+  import AddTimerModal from '@/components/AddTimerModal';
+  import AdBanner from '@/components/AdBanner';
+  import { requestNotificationPermission } from '@/utils/notifications';
+
+  export default function TimerScreen() {
+    const { timers, hydrated, hydrate } = useTimerStore();
+    const [modalVisible, setModalVisible] = useState(false);
+    const isDark = useColorScheme() === 'dark';
+
+    useEffect(() => {
+      hydrate();
+      requestNotificationPermission();
+    }, []);
+
+    return (
+      <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
+        <Text style={[styles.heading, isDark && styles.textDark]}>타이머</Text>
+        <ScrollView contentContainerStyle={styles.list}>
+          {timers.map((t) => <TimerCard key={t.id} timer={t} />)}
+        </ScrollView>
+        <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+        <AdBanner />
+        <AddTimerModal visible={modalVisible} onClose={() => setModalVisible(false)} />
+      </SafeAreaView>
+    );
+  }
+
+  const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#f2f2f7' },
+    containerDark: { backgroundColor: '#000' },
+    heading: { fontSize: 34, fontWeight: '700', padding: 16, color: '#000' },
+    textDark: { color: '#fff' },
+    list: { padding: 16, paddingBottom: 100 },
+    fab: { position: 'absolute', bottom: 80, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#007AFF', justifyContent: 'center', alignItems: 'center', elevation: 6 },
+    fabText: { fontSize: 32, color: '#fff', lineHeight: 36 },
+  });
+  ```
+
+- [ ] **Step 5: 실기기/에뮬레이터에서 확인**
+
+  - FAB 탭 → 타이머 추가 → 시작/정지/리셋
+  - 프리셋 저장 → 앱 재시작 후 프리셋 유지 확인
+  - 백그라운드로 이동 → 타이머 완료 알림 수신
+
+- [ ] **Step 6: 커밋**
 
   ```bash
-  git add app/src/
-  git commit -m "feat: TimerService (Foreground) and TimerViewModel"
+  git add app/index.tsx components/ utils/notifications.ts
+  git commit -m "feat: timer tab with multiple timers, presets, and notifications"
+  git push
   ```
 
 ---
 
-### Task 6: 타이머 UI
+### Task 5: 스톱워치 탭
 
 **Files:**
-- Modify: `timer/TimerScreen.kt` (플레이스홀더 교체)
+- Modify: `app/stopwatch.tsx`
 
 **Interfaces:**
-- Consumes: `TimerViewModel.timers`, `TimerViewModel.presets`, `TimerViewModel.addTimer()`, `.start()`, `.pause()`, `.reset()`, `.remove()`, `.savePreset()`
+- Consumes: `useStopwatchStore()`
 
-- [ ] **Step 1: TimerScreen.kt 전체 작성**
+- [ ] **Step 1: app/stopwatch.tsx 완성**
 
-  ```kotlin
-  package com.multitimer.timer
+  ```tsx
+  import React, { useEffect, useRef } from 'react';
+  import { View, Text, TouchableOpacity, FlatList, StyleSheet, useColorScheme } from 'react-native';
+  import { SafeAreaView } from 'react-native-safe-area-context';
+  import { useStopwatchStore } from '@/store/stopwatchStore';
+  import { formatMs } from '@/utils/time';
+  import AdBanner from '@/components/AdBanner';
+  import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
-  import androidx.compose.foundation.layout.*
-  import androidx.compose.foundation.lazy.LazyColumn
-  import androidx.compose.foundation.lazy.items
-  import androidx.compose.material.icons.Icons
-  import androidx.compose.material.icons.filled.*
-  import androidx.compose.material3.*
-  import androidx.compose.runtime.*
-  import androidx.compose.ui.Alignment
-  import androidx.compose.ui.Modifier
-  import androidx.compose.ui.unit.dp
-  import androidx.compose.ui.unit.sp
-  import androidx.hilt.navigation.compose.hiltViewModel
-  import com.multitimer.data.TimerPreset
+  export default function StopwatchScreen() {
+    const { elapsed, laps, isRunning, start, stop, lap, reset, tick } = useStopwatchStore();
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const isDark = useColorScheme() === 'dark';
 
-  @Composable
-  fun TimerScreen(vm: TimerViewModel = hiltViewModel()) {
-      val timers by vm.timers.collectAsState()
-      val presets by vm.presets.collectAsState()
-      var showAddDialog by remember { mutableStateOf(false) }
-      var showPresetsDialog by remember { mutableStateOf(false) }
-
-      Scaffold(
-          floatingActionButton = {
-              FloatingActionButton(onClick = { showAddDialog = true }) {
-                  Icon(Icons.Default.Add, "타이머 추가")
-              }
-          }
-      ) { padding ->
-          LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-              items(timers, key = { it.id }) { state ->
-                  TimerCard(state, vm)
-                  Spacer(Modifier.height(12.dp))
-              }
-          }
+    useEffect(() => {
+      if (isRunning) {
+        activateKeepAwakeAsync();
+        intervalRef.current = setInterval(tick, 30);
+      } else {
+        deactivateKeepAwake();
+        if (intervalRef.current) clearInterval(intervalRef.current);
       }
+      return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    }, [isRunning]);
 
-      if (showAddDialog) {
-          AddTimerDialog(
-              presets = presets,
-              onAdd = { label, seconds -> vm.addTimer(label, seconds) },
-              onSavePreset = { label, seconds -> vm.savePreset(label, seconds) },
-              onDeletePreset = { vm.deletePreset(it) },
-              onDismiss = { showAddDialog = false }
-          )
-      }
+    const fastestLap = laps.length > 1 ? Math.min(...laps) : null;
+    const slowestLap = laps.length > 1 ? Math.max(...laps) : null;
+
+    return (
+      <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
+        <Text style={[styles.heading, isDark && styles.textDark]}>스톱워치</Text>
+        <Text style={[styles.time, isDark && styles.textDark]}>{formatMs(elapsed)}</Text>
+        <View style={styles.controls}>
+          <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={isRunning ? lap : reset}>
+            <Text style={styles.btnSecText}>{isRunning ? '랩' : '리셋'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.btn, isRunning ? styles.btnStop : styles.btnStart]} onPress={isRunning ? stop : start}>
+            <Text style={styles.btnPrimText}>{isRunning ? '정지' : '시작'}</Text>
+          </TouchableOpacity>
+        </View>
+        <FlatList
+          data={laps}
+          keyExtractor={(_, i) => i.toString()}
+          renderItem={({ item, index }) => {
+            const lapNum = laps.length - index;
+            const isFastest = item === fastestLap;
+            const isSlowest = item === slowestLap;
+            return (
+              <View style={[styles.lapRow, isDark && styles.lapRowDark]}>
+                <Text style={[styles.lapNum, isDark && styles.textDark]}>랩 {lapNum}</Text>
+                <Text style={[styles.lapTime, isFastest && styles.fastest, isSlowest && styles.slowest, isDark && styles.textDark]}>
+                  {formatMs(item)}
+                </Text>
+              </View>
+            );
+          }}
+          style={styles.lapList}
+        />
+        <AdBanner />
+      </SafeAreaView>
+    );
   }
 
-  @Composable
-  fun TimerCard(state: TimerState, vm: TimerViewModel) {
-      val h = state.remainingSeconds / 3600
-      val m = (state.remainingSeconds % 3600) / 60
-      val s = state.remainingSeconds % 60
-      val timeText = if (h > 0) "%02d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
-      val progress = if (state.totalSeconds > 0) state.remainingSeconds.toFloat() / state.totalSeconds else 0f
-
-      Card(Modifier.fillMaxWidth()) {
-          Column(Modifier.padding(16.dp)) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                  Text(state.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                  IconButton(onClick = { vm.remove(state.id) }) {
-                      Icon(Icons.Default.Close, "삭제")
-                  }
-              }
-              Spacer(Modifier.height(8.dp))
-              LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-              Spacer(Modifier.height(8.dp))
-              Text(timeText, fontSize = 40.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
-              Spacer(Modifier.height(8.dp))
-              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                  IconButton(onClick = { vm.reset(state.id) }) { Icon(Icons.Default.Refresh, "리셋") }
-                  if (state.isRunning) {
-                      IconButton(onClick = { vm.pause(state.id) }) { Icon(Icons.Default.Pause, "정지") }
-                  } else {
-                      IconButton(onClick = { vm.start(state.id) }) { Icon(Icons.Default.PlayArrow, "시작") }
-                  }
-              }
-          }
-      }
-  }
-
-  @Composable
-  fun AddTimerDialog(
-      presets: List<TimerPreset>,
-      onAdd: (String, Int) -> Unit,
-      onSavePreset: (String, Int) -> Unit,
-      onDeletePreset: (TimerPreset) -> Unit,
-      onDismiss: () -> Unit
-  ) {
-      var label by remember { mutableStateOf("") }
-      var hours by remember { mutableStateOf("0") }
-      var minutes by remember { mutableStateOf("0") }
-      var seconds by remember { mutableStateOf("0") }
-
-      AlertDialog(
-          onDismissRequest = onDismiss,
-          title = { Text("타이머 추가") },
-          text = {
-              Column {
-                  OutlinedTextField(value = label, onValueChange = { label = it }, label = { Text("이름") })
-                  Spacer(Modifier.height(8.dp))
-                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                      OutlinedTextField(value = hours, onValueChange = { hours = it }, label = { Text("시") }, modifier = Modifier.weight(1f))
-                      OutlinedTextField(value = minutes, onValueChange = { minutes = it }, label = { Text("분") }, modifier = Modifier.weight(1f))
-                      OutlinedTextField(value = seconds, onValueChange = { seconds = it }, label = { Text("초") }, modifier = Modifier.weight(1f))
-                  }
-                  if (presets.isNotEmpty()) {
-                      Spacer(Modifier.height(12.dp))
-                      Text("프리셋", style = MaterialTheme.typography.labelMedium)
-                      presets.forEach { preset ->
-                          Row(verticalAlignment = Alignment.CenterVertically) {
-                              TextButton(onClick = {
-                                  label = preset.label
-                                  hours = (preset.durationSeconds / 3600).toString()
-                                  minutes = ((preset.durationSeconds % 3600) / 60).toString()
-                                  seconds = (preset.durationSeconds % 60).toString()
-                              }, modifier = Modifier.weight(1f)) { Text(preset.label) }
-                              IconButton(onClick = { onDeletePreset(preset) }) {
-                                  Icon(Icons.Default.Delete, "삭제", modifier = Modifier.size(16.dp))
-                              }
-                          }
-                      }
-                  }
-              }
-          },
-          confirmButton = {
-              Column {
-                  TextButton(onClick = {
-                      val total = (hours.toIntOrNull() ?: 0) * 3600 +
-                              (minutes.toIntOrNull() ?: 0) * 60 +
-                              (seconds.toIntOrNull() ?: 0)
-                      if (total > 0) {
-                          onSavePreset(label.ifBlank { "타이머" }, total)
-                      }
-                  }) { Text("프리셋 저장") }
-                  Button(onClick = {
-                      val total = (hours.toIntOrNull() ?: 0) * 3600 +
-                              (minutes.toIntOrNull() ?: 0) * 60 +
-                              (seconds.toIntOrNull() ?: 0)
-                      if (total > 0) { onAdd(label.ifBlank { "타이머" }, total); onDismiss() }
-                  }) { Text("시작") }
-              }
-          },
-          dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
-      )
-  }
+  const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#f2f2f7' },
+    containerDark: { backgroundColor: '#000' },
+    heading: { fontSize: 34, fontWeight: '700', padding: 16, color: '#000' },
+    textDark: { color: '#fff' },
+    time: { fontSize: 72, fontWeight: '200', textAlign: 'center', letterSpacing: 2, marginVertical: 24, color: '#000' },
+    controls: { flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 32, marginBottom: 32 },
+    btn: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
+    btnSecondary: { backgroundColor: '#e0e0e0' },
+    btnStart: { backgroundColor: '#34C759' },
+    btnStop: { backgroundColor: '#FF3B30' },
+    btnSecText: { fontSize: 16, fontWeight: '600', color: '#000' },
+    btnPrimText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+    lapList: { flex: 1, paddingHorizontal: 16 },
+    lapRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: '#ccc' },
+    lapRowDark: { borderBottomColor: '#444' },
+    lapNum: { fontSize: 16, color: '#000' },
+    lapTime: { fontSize: 16, color: '#000' },
+    fastest: { color: '#34C759' },
+    slowest: { color: '#FF3B30' },
+  });
   ```
 
-- [ ] **Step 2: 에뮬레이터에서 동작 확인**
+- [ ] **Step 2: 실기기에서 확인**
 
-  - FAB → 타이머 추가 → 시작/정지/리셋
-  - 프리셋 저장 → 다시 불러오기
-  - 앱 백그라운드 이동 후 알림 확인
+  시작 → 랩 여러 번 → 가장 빠른/느린 랩 색상 확인
 
 - [ ] **Step 3: 커밋**
 
   ```bash
-  git add app/src/
-  git commit -m "feat: timer tab UI with multiple timers and presets"
+  git add app/stopwatch.tsx
+  git commit -m "feat: stopwatch tab with lap tracking"
+  git push
   ```
 
 ---
 
-### Task 7: 스톱워치
+### Task 6: 인터벌 탭
 
 **Files:**
-- Create: `stopwatch/StopwatchViewModel.kt`
-- Modify: `stopwatch/StopwatchScreen.kt`
+- Modify: `app/interval.tsx`
+- Create: `components/IntervalRunView.tsx`
 
 **Interfaces:**
-- Produces:
-  - `StopwatchViewModel.elapsed: StateFlow<Long>` (밀리초)
-  - `StopwatchViewModel.laps: StateFlow<List<Long>>`
-  - `StopwatchViewModel.isRunning: StateFlow<Boolean>`
-  - `.start()`, `.stop()`, `.lap()`, `.reset()`
+- Consumes: `useIntervalStore()`, `scheduleTimerNotification()`
 
-- [ ] **Step 1: StopwatchViewModel 작성**
+- [ ] **Step 1: components/IntervalRunView.tsx 작성**
 
-  ```kotlin
-  package com.multitimer.stopwatch
+  ```tsx
+  import React, { useEffect, useRef, useState } from 'react';
+  import { View, Text, TouchableOpacity, StyleSheet, useColorScheme } from 'react-native';
+  import { IntervalSession } from '@/store/intervalStore';
+  import { formatTime } from '@/utils/time';
+  import { scheduleTimerNotification, cancelNotification } from '@/utils/notifications';
+  import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
-  import androidx.lifecycle.ViewModel
-  import androidx.lifecycle.viewModelScope
-  import dagger.hilt.android.lifecycle.HiltViewModel
-  import kotlinx.coroutines.*
-  import kotlinx.coroutines.flow.*
-  import javax.inject.Inject
+  type Props = { session: IntervalSession; onStop: () => void };
 
-  @HiltViewModel
-  class StopwatchViewModel @Inject constructor() : ViewModel() {
-      private val _elapsed = MutableStateFlow(0L)
-      val elapsed: StateFlow<Long> = _elapsed
+  export default function IntervalRunView({ session, onStop }: Props) {
+    const [stepIdx, setStepIdx] = useState(0);
+    const [repeat, setRepeat] = useState(1);
+    const [remaining, setRemaining] = useState(session.steps[0]?.durationSeconds ?? 0);
+    const [isRunning, setIsRunning] = useState(true);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const isDark = useColorScheme() === 'dark';
 
-      private val _laps = MutableStateFlow<List<Long>>(emptyList())
-      val laps: StateFlow<List<Long>> = _laps
+    const currentStep = session.steps[stepIdx];
+    const nextStep = session.steps[stepIdx + 1];
 
-      private val _isRunning = MutableStateFlow(false)
-      val isRunning: StateFlow<Boolean> = _isRunning
+    useEffect(() => {
+      activateKeepAwakeAsync();
+      return () => deactivateKeepAwake();
+    }, []);
 
-      private var job: Job? = null
-      private var startTime = 0L
-      private var baseElapsed = 0L
-
-      fun start() {
-          if (_isRunning.value) return
-          _isRunning.value = true
-          startTime = System.currentTimeMillis()
-          job = viewModelScope.launch {
-              while (isActive) {
-                  _elapsed.value = baseElapsed + (System.currentTimeMillis() - startTime)
-                  delay(10)
+    useEffect(() => {
+      if (isRunning) {
+        intervalRef.current = setInterval(() => {
+          setRemaining((r) => {
+            if (r <= 1) {
+              // 다음 스텝으로
+              const nextIdx = stepIdx + 1;
+              if (nextIdx < session.steps.length) {
+                setStepIdx(nextIdx);
+                return session.steps[nextIdx].durationSeconds;
+              } else if (repeat < session.repeatCount) {
+                setRepeat((prev) => prev + 1);
+                setStepIdx(0);
+                return session.steps[0].durationSeconds;
+              } else {
+                if (intervalRef.current) clearInterval(intervalRef.current);
+                setIsRunning(false);
+                scheduleTimerNotification(session.id, `${session.label} 완료!`, 0);
+                return 0;
               }
-          }
+            }
+            return r - 1;
+          });
+        }, 1000);
+      } else {
+        if (intervalRef.current) clearInterval(intervalRef.current);
       }
+      return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    }, [isRunning, stepIdx, repeat]);
 
-      fun stop() {
-          _isRunning.value = false
-          baseElapsed = _elapsed.value
-          job?.cancel()
-      }
-
-      fun lap() {
-          if (!_isRunning.value) return
-          _laps.value = listOf(_elapsed.value) + _laps.value
-      }
-
-      fun reset() {
-          job?.cancel()
-          _isRunning.value = false
-          _elapsed.value = 0L
-          _laps.value = emptyList()
-          baseElapsed = 0L
-      }
+    return (
+      <View style={[styles.container, isDark && styles.containerDark]}>
+        <Text style={[styles.sessionLabel, isDark && styles.textDark]}>{session.label}</Text>
+        <Text style={[styles.meta, isDark && styles.textDark]}>반복 {repeat}/{session.repeatCount} · 구간 {stepIdx + 1}/{session.steps.length}</Text>
+        <Text style={[styles.stepLabel, isDark && styles.textDark]}>{currentStep?.label}</Text>
+        <Text style={[styles.time, isDark && styles.textDark]}>{formatTime(remaining)}</Text>
+        {nextStep && <Text style={styles.next}>다음: {nextStep.label}</Text>}
+        <View style={styles.controls}>
+          <TouchableOpacity style={styles.stopBtn} onPress={onStop}>
+            <Text style={styles.stopBtnText}>중지</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.pauseBtn} onPress={() => setIsRunning((r) => !r)}>
+            <Text style={styles.pauseBtnText}>{isRunning ? '일시정지' : '계속'}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
   }
+
+  const styles = StyleSheet.create({
+    container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: '#f2f2f7' },
+    containerDark: { backgroundColor: '#000' },
+    sessionLabel: { fontSize: 24, fontWeight: '700', color: '#000', marginBottom: 8 },
+    textDark: { color: '#fff' },
+    meta: { fontSize: 14, color: '#666', marginBottom: 32 },
+    stepLabel: { fontSize: 20, fontWeight: '600', color: '#000', marginBottom: 16 },
+    time: { fontSize: 80, fontWeight: '200', color: '#000', letterSpacing: 2, marginBottom: 16 },
+    next: { fontSize: 14, color: '#999', marginBottom: 48 },
+    controls: { flexDirection: 'row', gap: 16 },
+    stopBtn: { paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: '#FF3B30' },
+    stopBtnText: { color: '#FF3B30', fontWeight: '600', fontSize: 16 },
+    pauseBtn: { paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12, backgroundColor: '#007AFF' },
+    pauseBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  });
   ```
 
-- [ ] **Step 2: StopwatchScreen 작성**
+- [ ] **Step 2: app/interval.tsx 완성**
 
-  ```kotlin
-  package com.multitimer.stopwatch
+  ```tsx
+  import React, { useEffect, useState } from 'react';
+  import { View, Text, TouchableOpacity, FlatList, Modal, TextInput, StyleSheet, useColorScheme, Alert } from 'react-native';
+  import { SafeAreaView } from 'react-native-safe-area-context';
+  import { useIntervalStore, IntervalSession, IntervalStep } from '@/store/intervalStore';
+  import IntervalRunView from '@/components/IntervalRunView';
+  import AdBanner from '@/components/AdBanner';
 
-  import androidx.compose.foundation.layout.*
-  import androidx.compose.foundation.lazy.LazyColumn
-  import androidx.compose.foundation.lazy.itemsIndexed
-  import androidx.compose.material.icons.Icons
-  import androidx.compose.material.icons.filled.*
-  import androidx.compose.material3.*
-  import androidx.compose.runtime.*
-  import androidx.compose.ui.Alignment
-  import androidx.compose.ui.Modifier
-  import androidx.compose.ui.unit.dp
-  import androidx.compose.ui.unit.sp
-  import androidx.hilt.navigation.compose.hiltViewModel
+  export default function IntervalScreen() {
+    const { sessions, hydrated, hydrate, addSession, deleteSession } = useIntervalStore();
+    const [running, setRunning] = useState<IntervalSession | null>(null);
+    const [showAdd, setShowAdd] = useState(false);
+    const isDark = useColorScheme() === 'dark';
 
-  @Composable
-  fun StopwatchScreen(vm: StopwatchViewModel = hiltViewModel()) {
-      val elapsed by vm.elapsed.collectAsState()
-      val laps by vm.laps.collectAsState()
-      val isRunning by vm.isRunning.collectAsState()
+    useEffect(() => { hydrate(); }, []);
 
-      Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-          Spacer(Modifier.height(32.dp))
-          Text(formatElapsed(elapsed), fontSize = 56.sp)
-          Spacer(Modifier.height(32.dp))
-          Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-              OutlinedButton(onClick = { if (isRunning) vm.lap() else vm.reset() }) {
-                  Text(if (isRunning) "랩" else "리셋")
-              }
-              Button(onClick = { if (isRunning) vm.stop() else vm.start() }, modifier = Modifier.size(72.dp)) {
-                  Icon(if (isRunning) Icons.Default.Pause else Icons.Default.PlayArrow, null)
-              }
-          }
-          Spacer(Modifier.height(24.dp))
-          LazyColumn(Modifier.fillMaxWidth()) {
-              itemsIndexed(laps) { i, lap ->
-                  Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                      Text("랩 ${laps.size - i}", Modifier.weight(1f))
-                      Text(formatElapsed(lap))
-                  }
-                  HorizontalDivider()
-              }
-          }
-      }
+    if (running) {
+      return <IntervalRunView session={running} onStop={() => setRunning(null)} />;
+    }
+
+    return (
+      <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
+        <Text style={[styles.heading, isDark && styles.textDark]}>인터벌</Text>
+        <FlatList
+          data={sessions}
+          keyExtractor={(s) => s.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          renderItem={({ item }) => (
+            <View style={[styles.card, isDark && styles.cardDark]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cardLabel, isDark && styles.textDark]}>{item.label}</Text>
+                <Text style={styles.cardMeta}>{item.steps.length}구간 · {item.repeatCount}회 반복</Text>
+              </View>
+              <TouchableOpacity onPress={() => Alert.alert('삭제', '삭제할까요?', [{ text: '취소' }, { text: '삭제', onPress: () => deleteSession(item.id), style: 'destructive' }])}>
+                <Text style={{ color: '#FF3B30', padding: 8 }}>삭제</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.startBtn} onPress={() => setRunning(item)}>
+                <Text style={styles.startBtnText}>시작</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        />
+        <TouchableOpacity style={styles.fab} onPress={() => setShowAdd(true)}>
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+        <AdBanner />
+        <AddSessionModal visible={showAdd} onClose={() => setShowAdd(false)} onSave={addSession} isDark={isDark} />
+      </SafeAreaView>
+    );
   }
 
-  fun formatElapsed(ms: Long): String {
-      val min = ms / 60000
-      val sec = (ms % 60000) / 1000
-      val cent = (ms % 1000) / 10
-      return "%02d:%02d.%02d".format(min, sec, cent)
+  function AddSessionModal({ visible, onClose, onSave, isDark }: { visible: boolean; onClose: () => void; onSave: (s: Omit<IntervalSession, 'id'>) => void; isDark: boolean }) {
+    const [label, setLabel] = useState('');
+    const [repeatCount, setRepeatCount] = useState('1');
+    const [steps, setSteps] = useState<Omit<IntervalStep, 'id'>[]>([]);
+    const [stepLabel, setStepLabel] = useState('');
+    const [stepSecs, setStepSecs] = useState('');
+
+    const handleSave = () => {
+      if (!label || steps.length === 0) return;
+      onSave({ label, steps: steps as IntervalStep[], repeatCount: parseInt(repeatCount) || 1 });
+      setLabel(''); setRepeatCount('1'); setSteps([]); onClose();
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <SafeAreaView style={[styles.modal, isDark && styles.modalDark]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, isDark && styles.textDark]}>인터벌 세션</Text>
+            <TouchableOpacity onPress={onClose}><Text style={{ color: '#999', fontSize: 24 }}>✕</Text></TouchableOpacity>
+          </View>
+          <TextInput style={[styles.input, isDark && styles.inputDark]} placeholder="세션 이름" placeholderTextColor="#999" value={label} onChangeText={setLabel} />
+          <TextInput style={[styles.input, isDark && styles.inputDark]} placeholder="반복 횟수" placeholderTextColor="#999" keyboardType="numeric" value={repeatCount} onChangeText={setRepeatCount} />
+          <Text style={[{ fontWeight: '600', marginBottom: 8 }, isDark && styles.textDark]}>구간</Text>
+          {steps.map((s, i) => (
+            <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={isDark && styles.textDark}>{s.label} — {s.durationSeconds}초</Text>
+              <TouchableOpacity onPress={() => setSteps(steps.filter((_, j) => j !== i))}><Text style={{ color: '#FF3B30' }}>삭제</Text></TouchableOpacity>
+            </View>
+          ))}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <TextInput style={[styles.input, isDark && styles.inputDark, { flex: 1 }]} placeholder="구간명" placeholderTextColor="#999" value={stepLabel} onChangeText={setStepLabel} />
+            <TextInput style={[styles.input, isDark && styles.inputDark, { width: 70 }]} placeholder="초" placeholderTextColor="#999" keyboardType="numeric" value={stepSecs} onChangeText={setStepSecs} />
+            <TouchableOpacity style={styles.addStepBtn} onPress={() => { if (stepLabel && stepSecs) { setSteps([...steps, { label: stepLabel, durationSeconds: parseInt(stepSecs) }]); setStepLabel(''); setStepSecs(''); } }}>
+              <Text style={{ color: '#007AFF', fontSize: 24 }}>+</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.saveMainBtn} onPress={handleSave}>
+            <Text style={styles.saveMainBtnText}>저장</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </Modal>
+    );
   }
+
+  const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#f2f2f7' },
+    containerDark: { backgroundColor: '#000' },
+    heading: { fontSize: 34, fontWeight: '700', padding: 16, color: '#000' },
+    textDark: { color: '#fff' },
+    card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center', elevation: 2 },
+    cardDark: { backgroundColor: '#1c1c1e' },
+    cardLabel: { fontSize: 16, fontWeight: '600', color: '#000' },
+    cardMeta: { fontSize: 13, color: '#999', marginTop: 2 },
+    startBtn: { backgroundColor: '#007AFF', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8, marginLeft: 8 },
+    startBtnText: { color: '#fff', fontWeight: '600' },
+    fab: { position: 'absolute', bottom: 80, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#007AFF', justifyContent: 'center', alignItems: 'center', elevation: 6 },
+    fabText: { fontSize: 32, color: '#fff', lineHeight: 36 },
+    modal: { flex: 1, padding: 24, backgroundColor: '#fff' },
+    modalDark: { backgroundColor: '#1c1c1e' },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
+    modalTitle: { fontSize: 20, fontWeight: '700', color: '#000' },
+    input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 12, color: '#000', backgroundColor: '#f9f9f9' },
+    inputDark: { borderColor: '#444', color: '#fff', backgroundColor: '#2c2c2e' },
+    addStepBtn: { width: 48, height: 48, borderRadius: 8, borderWidth: 1, borderColor: '#007AFF', justifyContent: 'center', alignItems: 'center' },
+    saveMainBtn: { backgroundColor: '#007AFF', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 24 },
+    saveMainBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  });
   ```
 
-- [ ] **Step 3: 에뮬레이터에서 확인**
-
-  스톱워치 탭 → 시작 → 랩 여러 번 → 정지 → 리셋
-
-- [ ] **Step 4: 커밋**
+- [ ] **Step 3: 확인 및 커밋**
 
   ```bash
-  git add app/src/
-  git commit -m "feat: stopwatch with lap tracking"
+  git add app/interval.tsx components/IntervalRunView.tsx
+  git commit -m "feat: interval timer tab with session management"
+  git push
   ```
 
 ---
 
-### Task 8: 인터벌 타이머
+### Task 7: 알람 탭
 
 **Files:**
-- Create: `interval/IntervalService.kt`
-- Create: `interval/IntervalViewModel.kt`
-- Modify: `interval/IntervalScreen.kt`
+- Modify: `app/alarm.tsx`
 
 **Interfaces:**
-- Produces:
-  - `IntervalViewModel.sessions: StateFlow<List<IntervalSessionWithSteps>>`
-  - `IntervalViewModel.runningState: StateFlow<IntervalRunState?>`
-  - `.startSession(session: IntervalSessionWithSteps)`
-  - `.pause()`, `.resume()`, `.stop()`
-  - `.saveSession(label, steps, repeatCount)`
-  - `.deleteSession(session)`
+- Consumes: `useAlarmStore()`, `scheduleAlarmNotification()`, `cancelNotification()`
 
-- [ ] **Step 1: IntervalRunState 정의 & IntervalService 작성**
+- [ ] **Step 1: app/alarm.tsx 완성**
 
-  `interval/IntervalService.kt`:
+  ```tsx
+  import React, { useEffect, useState } from 'react';
+  import { View, Text, TouchableOpacity, FlatList, Modal, TextInput, Switch, StyleSheet, useColorScheme, Alert, Platform } from 'react-native';
+  import { SafeAreaView } from 'react-native-safe-area-context';
+  import { useAlarmStore, Alarm } from '@/store/alarmStore';
+  import { scheduleAlarmNotification, cancelNotification } from '@/utils/notifications';
+  import AdBanner from '@/components/AdBanner';
 
-  ```kotlin
-  package com.multitimer.interval
+  const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
-  import android.app.*
-  import android.content.Intent
-  import android.os.*
-  import androidx.core.app.NotificationCompat
-  import com.multitimer.MainActivity
-  import com.multitimer.data.IntervalSessionWithSteps
-  import com.multitimer.data.IntervalStep
-  import com.multitimer.notifications.NotificationHelper
-  import kotlinx.coroutines.*
-  import kotlinx.coroutines.flow.MutableStateFlow
-  import kotlinx.coroutines.flow.StateFlow
+  export default function AlarmScreen() {
+    const { alarms, hydrated, hydrate, addAlarm, updateAlarm, deleteAlarm, toggleAlarm } = useAlarmStore();
+    const [showEdit, setShowEdit] = useState(false);
+    const [editTarget, setEditTarget] = useState<Alarm | null>(null);
+    const isDark = useColorScheme() === 'dark';
 
-  data class IntervalRunState(
-      val sessionLabel: String,
-      val currentStep: IntervalStep,
-      val stepIndex: Int,
-      val totalSteps: Int,
-      val currentRepeat: Int,
-      val totalRepeats: Int,
-      val remainingSeconds: Int,
-      val isRunning: Boolean
-  )
+    useEffect(() => {
+      hydrate();
+    }, []);
 
-  class IntervalService : Service() {
-      companion object {
-          const val ACTION_START = "INTERVAL_START"
-          const val ACTION_PAUSE = "INTERVAL_PAUSE"
-          const val ACTION_STOP = "INTERVAL_STOP"
-
-          private val _state = MutableStateFlow<IntervalRunState?>(null)
-          val state: StateFlow<IntervalRunState?> = _state
-          var pendingSession: IntervalSessionWithSteps? = null
+    const handleToggle = async (id: string) => {
+      const updated = toggleAlarm(id);
+      if (!updated) return;
+      if (updated.isEnabled) {
+        const notifId = await scheduleAlarmNotification(id, updated.label, updated.hour, updated.minute, updated.daysOfWeek.length > 0);
+        updateAlarm({ ...updated, notifId });
+      } else {
+        if (updated.notifId) await cancelNotification(updated.notifId);
       }
+    };
 
-      private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
-      private var timerJob: Job? = null
-      private val binder = LocalBinder()
-
-      inner class LocalBinder : Binder() { fun getService() = this@IntervalService }
-      override fun onBind(intent: Intent?) = binder
-
-      override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-          when (intent?.action) {
-              ACTION_START -> pendingSession?.let { startInterval(it) }
-              ACTION_PAUSE -> togglePause()
-              ACTION_STOP -> { stopSelf(); _state.value = null }
-          }
-          return START_NOT_STICKY
-      }
-
-      private fun startInterval(session: IntervalSessionWithSteps) {
-          val steps = session.steps.sortedBy { it.stepOrder }
-          if (steps.isEmpty()) return
-          _state.value = IntervalRunState(
-              sessionLabel = session.session.label,
-              currentStep = steps[0],
-              stepIndex = 0,
-              totalSteps = steps.size,
-              currentRepeat = 1,
-              totalRepeats = session.session.repeatCount,
-              remainingSeconds = steps[0].durationSeconds,
-              isRunning = true
-          )
-          startForeground(2, buildNotification())
-          tick(session, steps)
-      }
-
-      private fun tick(session: IntervalSessionWithSteps, steps: List<IntervalStep>) {
-          timerJob?.cancel()
-          timerJob = serviceScope.launch {
-              while (true) {
-                  delay(1000)
-                  val cur = _state.value ?: break
-                  if (!cur.isRunning) continue
-                  if (cur.remainingSeconds > 1) {
-                      _state.value = cur.copy(remainingSeconds = cur.remainingSeconds - 1)
-                  } else {
-                      // 다음 스텝으로
-                      val nextStepIdx = cur.stepIndex + 1
-                      if (nextStepIdx < steps.size) {
-                          _state.value = cur.copy(
-                              currentStep = steps[nextStepIdx],
-                              stepIndex = nextStepIdx,
-                              remainingSeconds = steps[nextStepIdx].durationSeconds
-                          )
-                      } else if (cur.currentRepeat < cur.totalRepeats) {
-                          _state.value = cur.copy(
-                              currentStep = steps[0],
-                              stepIndex = 0,
-                              currentRepeat = cur.currentRepeat + 1,
-                              remainingSeconds = steps[0].durationSeconds
-                          )
-                      } else {
-                          _state.value = cur.copy(isRunning = false, remainingSeconds = 0)
-                          notifyFinished(session.session.label)
-                          stopSelf()
-                          break
-                      }
-                  }
-                  updateForeground()
-              }
-          }
-      }
-
-      private fun togglePause() {
-          _state.value = _state.value?.let { it.copy(isRunning = !it.isRunning) }
-      }
-
-      private fun buildNotification(): Notification {
-          val pi = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-          val s = _state.value
-          return NotificationCompat.Builder(this, NotificationHelper.CHANNEL_TIMER)
-              .setSmallIcon(android.R.drawable.ic_media_play)
-              .setContentTitle(s?.sessionLabel ?: "인터벌")
-              .setContentText(s?.let { "${it.currentStep.label} ${it.remainingSeconds}초" } ?: "")
-              .setContentIntent(pi)
-              .setOngoing(true)
-              .build()
-      }
-
-      private fun updateForeground() {
-          (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(2, buildNotification())
-      }
-
-      private fun notifyFinished(label: String) {
-          val n = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_ALARM)
-              .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-              .setContentTitle("인터벌 완료")
-              .setContentText("$label 완료!")
-              .setAutoCancel(true)
-              .build()
-          (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(3, n)
-      }
-
-      override fun onDestroy() { serviceScope.cancel(); super.onDestroy() }
-  }
-  ```
-
-- [ ] **Step 2: IntervalViewModel 작성**
-
-  `interval/IntervalViewModel.kt`:
-
-  ```kotlin
-  package com.multitimer.interval
-
-  import android.app.Application
-  import android.content.Intent
-  import androidx.lifecycle.AndroidViewModel
-  import com.multitimer.data.*
-  import dagger.hilt.android.lifecycle.HiltViewModel
-  import kotlinx.coroutines.*
-  import kotlinx.coroutines.flow.*
-  import javax.inject.Inject
-
-  @HiltViewModel
-  class IntervalViewModel @Inject constructor(
-      app: Application,
-      private val dao: IntervalDao
-  ) : AndroidViewModel(app) {
-      private val context get() = getApplication<Application>()
-      private val scope = CoroutineScope(Dispatchers.IO)
-
-      val sessions = dao.getSessions().stateIn(scope, SharingStarted.Eagerly, emptyList())
-      val runningState = IntervalService.state
-
-      fun startSession(session: IntervalSessionWithSteps) {
-          IntervalService.pendingSession = session
-          val intent = Intent(context, IntervalService::class.java).apply { action = IntervalService.ACTION_START }
-          context.startForegroundService(intent)
-      }
-
-      fun pause() = context.startService(Intent(context, IntervalService::class.java).apply { action = IntervalService.ACTION_PAUSE })
-      fun stop() = context.startService(Intent(context, IntervalService::class.java).apply { action = IntervalService.ACTION_STOP })
-
-      fun saveSession(label: String, steps: List<Pair<String, Int>>, repeatCount: Int) {
-          scope.launch {
-              val id = dao.insertSession(IntervalSession(label = label, repeatCount = repeatCount))
-              val stepEntities = steps.mapIndexed { i, (stepLabel, seconds) ->
-                  IntervalStep(sessionId = id, label = stepLabel, durationSeconds = seconds, stepOrder = i)
-              }
-              dao.insertSteps(stepEntities)
-          }
-      }
-
-      fun deleteSession(session: IntervalSession) {
-          scope.launch { dao.deleteSession(session) }
-      }
-  }
-  ```
-
-- [ ] **Step 3: IntervalScreen 작성**
-
-  `interval/IntervalScreen.kt`:
-
-  ```kotlin
-  package com.multitimer.interval
-
-  import androidx.compose.foundation.layout.*
-  import androidx.compose.foundation.lazy.LazyColumn
-  import androidx.compose.foundation.lazy.items
-  import androidx.compose.material.icons.Icons
-  import androidx.compose.material.icons.filled.*
-  import androidx.compose.material3.*
-  import androidx.compose.runtime.*
-  import androidx.compose.ui.Alignment
-  import androidx.compose.ui.Modifier
-  import androidx.compose.ui.unit.dp
-  import androidx.compose.ui.unit.sp
-  import androidx.hilt.navigation.compose.hiltViewModel
-  import com.multitimer.data.IntervalSessionWithSteps
-
-  @Composable
-  fun IntervalScreen(vm: IntervalViewModel = hiltViewModel()) {
-      val sessions by vm.sessions.collectAsState()
-      val running by vm.runningState.collectAsState()
-      var showAdd by remember { mutableStateOf(false) }
-
-      if (running != null) {
-          IntervalRunView(state = running!!, onPause = vm::pause, onStop = vm::stop)
-          return
-      }
-
-      Scaffold(
-          floatingActionButton = {
-              FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Default.Add, "세션 추가") }
-          }
-      ) { padding ->
-          LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-              items(sessions, key = { it.session.id }) { session ->
-                  SessionCard(session, onStart = { vm.startSession(session) }, onDelete = { vm.deleteSession(session.session) })
-                  Spacer(Modifier.height(12.dp))
-              }
-          }
-      }
-
-      if (showAdd) AddSessionDialog(onSave = { label, steps, repeat -> vm.saveSession(label, steps, repeat) }, onDismiss = { showAdd = false })
-  }
-
-  @Composable
-  fun IntervalRunView(state: IntervalRunState, onPause: () -> Unit, onStop: () -> Unit) {
-      Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-          Spacer(Modifier.height(32.dp))
-          Text(state.sessionLabel, style = MaterialTheme.typography.headlineSmall)
-          Text("반복 ${state.currentRepeat}/${state.totalRepeats} · 구간 ${state.stepIndex + 1}/${state.totalSteps}")
-          Spacer(Modifier.height(24.dp))
-          Text(state.currentStep.label, style = MaterialTheme.typography.titleLarge)
-          Text("${state.remainingSeconds}초", fontSize = 64.sp)
-          Spacer(Modifier.height(32.dp))
-          Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-              OutlinedButton(onClick = onStop) { Text("중지") }
-              Button(onClick = onPause) { Text(if (state.isRunning) "일시정지" else "계속") }
-          }
-      }
-  }
-
-  @Composable
-  fun SessionCard(session: IntervalSessionWithSteps, onStart: () -> Unit, onDelete: () -> Unit) {
-      Card(Modifier.fillMaxWidth()) {
-          Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-              Column(Modifier.weight(1f)) {
-                  Text(session.session.label, style = MaterialTheme.typography.titleMedium)
-                  Text("${session.steps.size}구간 · ${session.session.repeatCount}회 반복", style = MaterialTheme.typography.bodySmall)
-              }
-              IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "삭제") }
-              Button(onClick = onStart) { Text("시작") }
-          }
-      }
-  }
-
-  @Composable
-  fun AddSessionDialog(onSave: (String, List<Pair<String, Int>>, Int) -> Unit, onDismiss: () -> Unit) {
-      var label by remember { mutableStateOf("") }
-      var repeatCount by remember { mutableStateOf("1") }
-      val steps = remember { mutableStateListOf<Pair<String, Int>>() }
-      var stepLabel by remember { mutableStateOf("") }
-      var stepSeconds by remember { mutableStateOf("") }
-
-      AlertDialog(
-          onDismissRequest = onDismiss,
-          title = { Text("인터벌 세션 추가") },
-          text = {
-              Column {
-                  OutlinedTextField(value = label, onValueChange = { label = it }, label = { Text("세션 이름") })
-                  OutlinedTextField(value = repeatCount, onValueChange = { repeatCount = it }, label = { Text("반복 횟수") })
-                  Spacer(Modifier.height(8.dp))
-                  Text("구간 목록", style = MaterialTheme.typography.labelMedium)
-                  steps.forEachIndexed { i, (sl, ss) ->
-                      Row(verticalAlignment = Alignment.CenterVertically) {
-                          Text("$sl ${ss}초", Modifier.weight(1f))
-                          IconButton(onClick = { steps.removeAt(i) }) { Icon(Icons.Default.Remove, "삭제", Modifier.size(16.dp)) }
-                      }
-                  }
-                  Row(verticalAlignment = Alignment.CenterVertically) {
-                      OutlinedTextField(value = stepLabel, onValueChange = { stepLabel = it }, label = { Text("구간명") }, modifier = Modifier.weight(1f))
-                      Spacer(Modifier.width(4.dp))
-                      OutlinedTextField(value = stepSeconds, onValueChange = { stepSeconds = it }, label = { Text("초") }, modifier = Modifier.width(64.dp))
-                      IconButton(onClick = {
-                          val s = stepSeconds.toIntOrNull() ?: return@IconButton
-                          steps.add(stepLabel to s); stepLabel = ""; stepSeconds = ""
-                      }) { Icon(Icons.Default.Add, "구간 추가") }
-                  }
-              }
+    const handleDelete = async (alarm: Alarm) => {
+      Alert.alert('삭제', '알람을 삭제할까요?', [
+        { text: '취소' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            if (alarm.notifId) await cancelNotification(alarm.notifId);
+            deleteAlarm(alarm.id);
           },
-          confirmButton = {
-              Button(onClick = {
-                  if (label.isNotBlank() && steps.isNotEmpty()) {
-                      onSave(label, steps.toList(), repeatCount.toIntOrNull() ?: 1)
-                      onDismiss()
-                  }
-              }) { Text("저장") }
-          },
-          dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
-      )
+        },
+      ]);
+    };
+
+    const handleSave = async (data: Omit<Alarm, 'id'>) => {
+      if (editTarget) {
+        if (editTarget.notifId) await cancelNotification(editTarget.notifId);
+        const notifId = data.isEnabled
+          ? await scheduleAlarmNotification(editTarget.id, data.label, data.hour, data.minute, data.daysOfWeek.length > 0)
+          : undefined;
+        updateAlarm({ ...data, id: editTarget.id, notifId });
+      } else {
+        const alarm = addAlarm(data);
+        if (alarm.isEnabled) {
+          const notifId = await scheduleAlarmNotification(alarm.id, alarm.label, alarm.hour, alarm.minute, alarm.daysOfWeek.length > 0);
+          updateAlarm({ ...alarm, notifId });
+        }
+      }
+      setShowEdit(false);
+      setEditTarget(null);
+    };
+
+    return (
+      <SafeAreaView style={[styles.container, isDark && styles.containerDark]}>
+        <Text style={[styles.heading, isDark && styles.textDark]}>알람</Text>
+        <FlatList
+          data={alarms}
+          keyExtractor={(a) => a.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          renderItem={({ item }) => (
+            <View style={[styles.card, isDark && styles.cardDark]}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => { setEditTarget(item); setShowEdit(true); }}>
+                <Text style={[styles.timeText, isDark && styles.textDark]}>
+                  {item.hour.toString().padStart(2, '0')}:{item.minute.toString().padStart(2, '0')}
+                </Text>
+                {item.label ? <Text style={[styles.labelText, isDark && styles.textDark]}>{item.label}</Text> : null}
+                <Text style={styles.daysText}>
+                  {item.daysOfWeek.length === 0 ? '한 번만' : item.daysOfWeek.map((d) => DAY_LABELS[d]).join(' ')}
+                </Text>
+              </TouchableOpacity>
+              <Switch value={item.isEnabled} onValueChange={() => handleToggle(item.id)} />
+              <TouchableOpacity onPress={() => handleDelete(item)} style={{ padding: 8 }}>
+                <Text style={{ color: '#FF3B30', fontSize: 16 }}>삭제</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        />
+        <TouchableOpacity style={styles.fab} onPress={() => { setEditTarget(null); setShowEdit(true); }}>
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+        <AdBanner />
+        <AlarmEditModal visible={showEdit} alarm={editTarget} onSave={handleSave} onClose={() => { setShowEdit(false); setEditTarget(null); }} isDark={isDark} />
+      </SafeAreaView>
+    );
   }
+
+  function AlarmEditModal({ visible, alarm, onSave, onClose, isDark }: {
+    visible: boolean; alarm: Alarm | null;
+    onSave: (data: Omit<Alarm, 'id'>) => void;
+    onClose: () => void; isDark: boolean;
+  }) {
+    const [hour, setHour] = useState(alarm?.hour.toString() ?? '7');
+    const [minute, setMinute] = useState(alarm?.minute.toString() ?? '0');
+    const [label, setLabel] = useState(alarm?.label ?? '');
+    const [days, setDays] = useState<number[]>(alarm?.daysOfWeek ?? []);
+
+    useEffect(() => {
+      setHour(alarm?.hour.toString() ?? '7');
+      setMinute(alarm?.minute.toString() ?? '0');
+      setLabel(alarm?.label ?? '');
+      setDays(alarm?.daysOfWeek ?? []);
+    }, [alarm]);
+
+    const toggleDay = (d: number) => setDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort());
+
+    const handleSave = () => {
+      const h = Math.min(23, Math.max(0, parseInt(hour) || 0));
+      const m = Math.min(59, Math.max(0, parseInt(minute) || 0));
+      onSave({ label, hour: h, minute: m, daysOfWeek: days, isEnabled: true });
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <SafeAreaView style={[styles.modal, isDark && { backgroundColor: '#1c1c1e' }]}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, isDark && styles.textDark]}>{alarm ? '알람 편집' : '알람 추가'}</Text>
+            <TouchableOpacity onPress={onClose}><Text style={{ color: '#999', fontSize: 24 }}>✕</Text></TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={[{ marginBottom: 4, color: '#666' }]}>시</Text>
+              <TextInput style={[styles.input, isDark && styles.inputDark, { textAlign: 'center', fontSize: 32 }]} keyboardType="numeric" value={hour} onChangeText={setHour} maxLength={2} />
+            </View>
+            <Text style={{ fontSize: 40, alignSelf: 'flex-end', marginBottom: 12, color: isDark ? '#fff' : '#000' }}>:</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[{ marginBottom: 4, color: '#666' }]}>분</Text>
+              <TextInput style={[styles.input, isDark && styles.inputDark, { textAlign: 'center', fontSize: 32 }]} keyboardType="numeric" value={minute} onChangeText={setMinute} maxLength={2} />
+            </View>
+          </View>
+          <TextInput style={[styles.input, isDark && styles.inputDark]} placeholder="레이블 (선택)" placeholderTextColor="#999" value={label} onChangeText={setLabel} />
+          <Text style={[{ fontWeight: '600', marginBottom: 12 }, isDark && styles.textDark]}>반복 요일</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 24 }}>
+            {DAY_LABELS.map((d, i) => (
+              <TouchableOpacity key={i} style={[styles.dayBtn, days.includes(i) && styles.dayBtnActive]} onPress={() => toggleDay(i)}>
+                <Text style={[styles.dayBtnText, days.includes(i) && styles.dayBtnTextActive]}>{d}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity style={styles.saveMainBtn} onPress={handleSave}>
+            <Text style={styles.saveMainBtnText}>저장</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#f2f2f7' },
+    containerDark: { backgroundColor: '#000' },
+    heading: { fontSize: 34, fontWeight: '700', padding: 16, color: '#000' },
+    textDark: { color: '#fff' },
+    card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center', elevation: 2 },
+    cardDark: { backgroundColor: '#1c1c1e' },
+    timeText: { fontSize: 40, fontWeight: '200', color: '#000' },
+    labelText: { fontSize: 14, color: '#000', marginTop: 2 },
+    daysText: { fontSize: 13, color: '#999', marginTop: 2 },
+    fab: { position: 'absolute', bottom: 80, right: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#007AFF', justifyContent: 'center', alignItems: 'center', elevation: 6 },
+    fabText: { fontSize: 32, color: '#fff', lineHeight: 36 },
+    modal: { flex: 1, padding: 24, backgroundColor: '#fff' },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
+    modalTitle: { fontSize: 20, fontWeight: '700', color: '#000' },
+    input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 12, marginBottom: 12, color: '#000', backgroundColor: '#f9f9f9' },
+    inputDark: { borderColor: '#444', color: '#fff', backgroundColor: '#2c2c2e' },
+    dayBtn: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, borderColor: '#ddd', justifyContent: 'center', alignItems: 'center' },
+    dayBtnActive: { backgroundColor: '#007AFF', borderColor: '#007AFF' },
+    dayBtnText: { fontSize: 13, color: '#666' },
+    dayBtnTextActive: { color: '#fff' },
+    saveMainBtn: { backgroundColor: '#007AFF', borderRadius: 12, padding: 16, alignItems: 'center' },
+    saveMainBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  });
   ```
 
-- [ ] **Step 4: 에뮬레이터에서 동작 확인**
-
-  세션 추가 → 구간 2~3개 입력 → 시작 → 구간 전환 확인
-
-- [ ] **Step 5: 커밋**
+- [ ] **Step 2: 확인 및 커밋**
 
   ```bash
-  git add app/src/
-  git commit -m "feat: interval timer with foreground service"
+  git add app/alarm.tsx
+  git commit -m "feat: alarm tab with scheduled notifications"
+  git push
   ```
 
 ---
 
-### Task 9: 알람
+### Task 8: EAS Build & Play Store 출시 준비
 
 **Files:**
-- Create: `alarm/AlarmReceiver.kt`
-- Create: `alarm/BootReceiver.kt`
-- Create: `alarm/AlarmFullscreenActivity.kt`
-- Create: `alarm/AlarmViewModel.kt`
-- Modify: `alarm/AlarmScreen.kt`
+- Create: `eas.json`
 
-**Interfaces:**
-- Produces:
-  - `AlarmViewModel.alarms: StateFlow<List<Alarm>>`
-  - `.saveAlarm(alarm: Alarm)`
-  - `.deleteAlarm(alarm: Alarm)`
-  - `.toggleAlarm(alarm: Alarm)`
-  - `AlarmScheduler.schedule(context, alarm)` — AlarmManager에 등록
-  - `AlarmScheduler.cancel(context, alarm)` — 취소
-
-- [ ] **Step 1: AlarmScheduler 유틸 작성**
-
-  `alarm/AlarmScheduler.kt`:
-
-  ```kotlin
-  package com.multitimer.alarm
-
-  import android.app.AlarmManager
-  import android.app.PendingIntent
-  import android.content.Context
-  import android.content.Intent
-  import com.multitimer.data.Alarm
-  import java.util.Calendar
-
-  object AlarmScheduler {
-      fun schedule(context: Context, alarm: Alarm) {
-          val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-          val intent = Intent(context, AlarmReceiver::class.java).apply {
-              putExtra("alarm_id", alarm.id)
-              putExtra("alarm_label", alarm.label)
-          }
-          val pi = PendingIntent.getBroadcast(context, alarm.id.toInt(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
-          val cal = Calendar.getInstance().apply {
-              set(Calendar.HOUR_OF_DAY, alarm.hour)
-              set(Calendar.MINUTE, alarm.minute)
-              set(Calendar.SECOND, 0)
-              set(Calendar.MILLISECOND, 0)
-              if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
-          }
-
-          if (alarm.daysOfWeek.isBlank()) {
-              manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
-          } else {
-              // 반복 알람: 가장 가까운 요일 계산
-              val days = alarm.daysOfWeek.split(",").mapNotNull { it.trim().toIntOrNull() }
-              val todayDow = cal.get(Calendar.DAY_OF_WEEK) // 1=일 ~ 7=토
-              val calDays = days.map { if (it == 7) 1 else it + 1 } // 1=월 → Calendar.MONDAY=2
-              var minOffset = Int.MAX_VALUE
-              calDays.forEach { dow ->
-                  var offset = dow - todayDow
-                  if (offset < 0 || (offset == 0 && cal.timeInMillis <= System.currentTimeMillis())) offset += 7
-                  if (offset < minOffset) minOffset = offset
-              }
-              cal.add(Calendar.DAY_OF_YEAR, minOffset)
-              manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
-          }
-      }
-
-      fun cancel(context: Context, alarm: Alarm) {
-          val manager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-          val pi = PendingIntent.getBroadcast(context, alarm.id.toInt(),
-              Intent(context, AlarmReceiver::class.java),
-              PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
-          pi?.let { manager.cancel(it) }
-      }
-  }
-  ```
-
-- [ ] **Step 2: AlarmReceiver 작성**
-
-  `alarm/AlarmReceiver.kt`:
-
-  ```kotlin
-  package com.multitimer.alarm
-
-  import android.content.BroadcastReceiver
-  import android.content.Context
-  import android.content.Intent
-
-  class AlarmReceiver : BroadcastReceiver() {
-      override fun onReceive(context: Context, intent: Intent) {
-          val label = intent.getStringExtra("alarm_label") ?: "알람"
-          val fullscreenIntent = Intent(context, AlarmFullscreenActivity::class.java).apply {
-              flags = Intent.FLAG_ACTIVITY_NEW_TASK
-              putExtra("alarm_label", label)
-          }
-          context.startActivity(fullscreenIntent)
-      }
-  }
-  ```
-
-- [ ] **Step 3: BootReceiver 작성**
-
-  `alarm/BootReceiver.kt`:
-
-  ```kotlin
-  package com.multitimer.alarm
-
-  import android.content.BroadcastReceiver
-  import android.content.Context
-  import android.content.Intent
-  import com.multitimer.data.AppDatabase
-  import kotlinx.coroutines.*
-
-  class BootReceiver : BroadcastReceiver() {
-      override fun onReceive(context: Context, intent: Intent) {
-          if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-          CoroutineScope(Dispatchers.IO).launch {
-              val db = AppDatabase.getInstance(context)
-              db.alarmDao().getEnabled().forEach { alarm ->
-                  AlarmScheduler.schedule(context, alarm)
-              }
-          }
-      }
-  }
-  ```
-
-  `data/AppDatabase.kt`에 companion object 추가 (싱글톤 접근용):
-
-  ```kotlin
-  companion object {
-      @Volatile private var INSTANCE: AppDatabase? = null
-      fun getInstance(context: Context): AppDatabase =
-          INSTANCE ?: synchronized(this) {
-              INSTANCE ?: Room.databaseBuilder(context, AppDatabase::class.java, "multitimer.db").build().also { INSTANCE = it }
-          }
-  }
-  ```
-
-- [ ] **Step 4: AlarmFullscreenActivity 작성**
-
-  `alarm/AlarmFullscreenActivity.kt`:
-
-  ```kotlin
-  package com.multitimer.alarm
-
-  import android.os.Bundle
-  import androidx.activity.ComponentActivity
-  import androidx.activity.compose.setContent
-  import androidx.compose.foundation.layout.*
-  import androidx.compose.material3.*
-  import androidx.compose.ui.Alignment
-  import androidx.compose.ui.Modifier
-  import androidx.compose.ui.unit.dp
-  import androidx.compose.ui.unit.sp
-  import com.multitimer.ui.theme.MultiTimerTheme
-
-  class AlarmFullscreenActivity : ComponentActivity() {
-      override fun onCreate(savedInstanceState: Bundle?) {
-          super.onCreate(savedInstanceState)
-          val label = intent.getStringExtra("alarm_label") ?: "알람"
-          setContent {
-              MultiTimerTheme {
-                  Surface(Modifier.fillMaxSize()) {
-                      Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                          Text("알람", fontSize = 32.sp)
-                          Spacer(Modifier.height(16.dp))
-                          Text(label, style = MaterialTheme.typography.headlineMedium)
-                          Spacer(Modifier.height(48.dp))
-                          Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                              OutlinedButton(onClick = { finish() }) { Text("다시 알림 (5분)") }
-                              Button(onClick = { finish() }) { Text("끄기") }
-                          }
-                      }
-                  }
-              }
-          }
-      }
-  }
-  ```
-
-  > 다시알림(snooze)은 `finish()` 호출 전 AlarmScheduler.schedule()에 5분 후 시간으로 재등록하면 됨 — 현 단계에선 UI만 구현.
-
-- [ ] **Step 5: AlarmViewModel 작성**
-
-  `alarm/AlarmViewModel.kt`:
-
-  ```kotlin
-  package com.multitimer.alarm
-
-  import android.app.Application
-  import androidx.lifecycle.AndroidViewModel
-  import com.multitimer.data.Alarm
-  import com.multitimer.data.AlarmDao
-  import dagger.hilt.android.lifecycle.HiltViewModel
-  import kotlinx.coroutines.*
-  import kotlinx.coroutines.flow.*
-  import javax.inject.Inject
-
-  @HiltViewModel
-  class AlarmViewModel @Inject constructor(
-      app: Application,
-      private val dao: AlarmDao
-  ) : AndroidViewModel(app) {
-      private val context get() = getApplication<Application>()
-      private val scope = CoroutineScope(Dispatchers.IO)
-
-      val alarms = dao.getAll().stateIn(scope, SharingStarted.Eagerly, emptyList())
-
-      fun saveAlarm(alarm: Alarm) {
-          scope.launch {
-              val id = dao.upsert(alarm)
-              val saved = alarm.copy(id = if (alarm.id == 0L) id else alarm.id)
-              if (saved.isEnabled) AlarmScheduler.schedule(context, saved)
-          }
-      }
-
-      fun deleteAlarm(alarm: Alarm) {
-          scope.launch {
-              AlarmScheduler.cancel(context, alarm)
-              dao.delete(alarm)
-          }
-      }
-
-      fun toggleAlarm(alarm: Alarm) {
-          val updated = alarm.copy(isEnabled = !alarm.isEnabled)
-          scope.launch {
-              dao.upsert(updated)
-              if (updated.isEnabled) AlarmScheduler.schedule(context, updated)
-              else AlarmScheduler.cancel(context, updated)
-          }
-      }
-  }
-  ```
-
-- [ ] **Step 6: AlarmScreen 작성**
-
-  `alarm/AlarmScreen.kt`:
-
-  ```kotlin
-  package com.multitimer.alarm
-
-  import androidx.compose.foundation.layout.*
-  import androidx.compose.foundation.lazy.LazyColumn
-  import androidx.compose.foundation.lazy.items
-  import androidx.compose.material.icons.Icons
-  import androidx.compose.material.icons.filled.*
-  import androidx.compose.material3.*
-  import androidx.compose.runtime.*
-  import androidx.compose.ui.Alignment
-  import androidx.compose.ui.Modifier
-  import androidx.compose.ui.unit.dp
-  import androidx.hilt.navigation.compose.hiltViewModel
-  import com.multitimer.data.Alarm
-
-  @Composable
-  fun AlarmScreen(vm: AlarmViewModel = hiltViewModel()) {
-      val alarms by vm.alarms.collectAsState()
-      var showAdd by remember { mutableStateOf(false) }
-      var editTarget by remember { mutableStateOf<Alarm?>(null) }
-
-      Scaffold(
-          floatingActionButton = {
-              FloatingActionButton(onClick = { showAdd = true }) { Icon(Icons.Default.Add, "알람 추가") }
-          }
-      ) { padding ->
-          LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-              items(alarms, key = { it.id }) { alarm ->
-                  AlarmCard(alarm, onToggle = { vm.toggleAlarm(alarm) }, onEdit = { editTarget = alarm }, onDelete = { vm.deleteAlarm(alarm) })
-                  Spacer(Modifier.height(8.dp))
-              }
-          }
-      }
-
-      if (showAdd) {
-          AlarmEditDialog(alarm = null, onSave = { vm.saveAlarm(it); showAdd = false }, onDismiss = { showAdd = false })
-      }
-      editTarget?.let { target ->
-          AlarmEditDialog(alarm = target, onSave = { vm.saveAlarm(it); editTarget = null }, onDismiss = { editTarget = null })
-      }
-  }
-
-  @Composable
-  fun AlarmCard(alarm: Alarm, onToggle: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
-      val days = listOf("월","화","수","목","금","토","일")
-      val dayText = if (alarm.daysOfWeek.isBlank()) "한 번만" else alarm.daysOfWeek.split(",").mapNotNull { it.trim().toIntOrNull() }.joinToString(" ") { days.getOrElse(it - 1) { "" } }
-      Card(Modifier.fillMaxWidth()) {
-          Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-              Column(Modifier.weight(1f)) {
-                  Text("%02d:%02d".format(alarm.hour, alarm.minute), style = MaterialTheme.typography.headlineSmall)
-                  if (alarm.label.isNotBlank()) Text(alarm.label, style = MaterialTheme.typography.bodySmall)
-                  Text(dayText, style = MaterialTheme.typography.bodySmall)
-              }
-              Switch(checked = alarm.isEnabled, onCheckedChange = { onToggle() })
-              IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "편집") }
-              IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "삭제") }
-          }
-      }
-  }
-
-  @Composable
-  fun AlarmEditDialog(alarm: Alarm?, onSave: (Alarm) -> Unit, onDismiss: () -> Unit) {
-      var hour by remember { mutableStateOf(alarm?.hour?.toString() ?: "7") }
-      var minute by remember { mutableStateOf(alarm?.minute?.toString() ?: "0") }
-      var label by remember { mutableStateOf(alarm?.label ?: "") }
-      val dayNames = listOf("월", "화", "수", "목", "금", "토", "일")
-      val selectedDays = remember {
-          val init = alarm?.daysOfWeek?.split(",")?.mapNotNull { it.trim().toIntOrNull() }?.toMutableSet() ?: mutableSetOf()
-          mutableStateOf(init)
-      }
-
-      AlertDialog(
-          onDismissRequest = onDismiss,
-          title = { Text(if (alarm == null) "알람 추가" else "알람 편집") },
-          text = {
-              Column {
-                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                      OutlinedTextField(value = hour, onValueChange = { hour = it }, label = { Text("시") }, modifier = Modifier.weight(1f))
-                      OutlinedTextField(value = minute, onValueChange = { minute = it }, label = { Text("분") }, modifier = Modifier.weight(1f))
-                  }
-                  Spacer(Modifier.height(8.dp))
-                  OutlinedTextField(value = label, onValueChange = { label = it }, label = { Text("레이블") })
-                  Spacer(Modifier.height(8.dp))
-                  Text("반복 요일 (선택 안 하면 한 번만)", style = MaterialTheme.typography.labelMedium)
-                  Row {
-                      dayNames.forEachIndexed { i, name ->
-                          val day = i + 1
-                          FilterChip(
-                              selected = day in selectedDays.value,
-                              onClick = {
-                                  selectedDays.value = selectedDays.value.toMutableSet().also { if (day in it) it.remove(day) else it.add(day) }
-                              },
-                              label = { Text(name) },
-                              modifier = Modifier.padding(end = 4.dp)
-                          )
-                      }
-                  }
-              }
-          },
-          confirmButton = {
-              Button(onClick = {
-                  val h = hour.toIntOrNull()?.coerceIn(0, 23) ?: return@Button
-                  val m = minute.toIntOrNull()?.coerceIn(0, 59) ?: return@Button
-                  val daysStr = selectedDays.value.sorted().joinToString(",")
-                  onSave(Alarm(id = alarm?.id ?: 0, label = label, hour = h, minute = m, daysOfWeek = daysStr, isEnabled = true))
-              }) { Text("저장") }
-          },
-          dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } }
-      )
-  }
-  ```
-
-- [ ] **Step 7: 에뮬레이터에서 동작 확인**
-
-  알람 추가 → 1~2분 후로 설정 → 잠금 화면에서 알람 팝업 확인
-
-- [ ] **Step 8: 커밋**
+- [ ] **Step 1: EAS CLI 설치**
 
   ```bash
-  git add app/src/
-  git commit -m "feat: alarm tab with AlarmManager, boot restore, fullscreen activity"
+  npm install -g eas-cli
+  eas login
   ```
 
----
-
-### Task 10: 최종 점검 & Play Store 출시 준비
-
-**Files:**
-- Modify: `app/build.gradle.kts` (서명 설정)
-- Modify: `AndroidManifest.xml` (AdMob 실 ID 교체)
-
-- [ ] **Step 1: 실 AdMob App ID 및 배너 ID 교체**
-
-  1. AdMob 콘솔(admob.google.com) → 앱 추가 → Android → 앱 ID 복사
-  2. `AndroidManifest.xml`의 `APPLICATION_ID` 메타데이터 값 교체
-  3. `ui/AdBanner.kt`의 `adUnitId` 교체
-
-- [ ] **Step 2: 서명 키스토어 생성**
+- [ ] **Step 2: eas.json 생성**
 
   ```bash
-  keytool -genkey -v -keystore multitimer-release.jks -alias multitimer -keyalg RSA -keysize 2048 -validity 10000
+  eas build:configure
   ```
 
-- [ ] **Step 3: app/build.gradle.kts 서명 설정**
+  생성된 `eas.json` 확인 후 아래와 같이 수정:
 
-  ```kotlin
-  android {
-      signingConfigs {
-          create("release") {
-              storeFile = file("multitimer-release.jks")
-              storePassword = System.getenv("KEYSTORE_PASS")
-              keyAlias = "multitimer"
-              keyPassword = System.getenv("KEY_PASS")
-          }
+  ```json
+  {
+    "cli": { "version": ">= 10.0.0" },
+    "build": {
+      "development": {
+        "developmentClient": true,
+        "distribution": "internal"
+      },
+      "preview": {
+        "distribution": "internal",
+        "android": { "buildType": "apk" }
+      },
+      "production": {
+        "android": { "buildType": "aab" },
+        "ios": { "distribution": "store" }
       }
-      buildTypes {
-          release {
-              signingConfig = signingConfigs.getByName("release")
-              isMinifyEnabled = true
-          }
-      }
+    },
+    "submit": {
+      "production": {}
+    }
   }
   ```
 
-- [ ] **Step 4: Release APK/AAB 빌드**
+- [ ] **Step 3: 실 AdMob ID 교체**
+
+  1. AdMob 콘솔에서 앱 ID, 배너 유닛 ID 발급
+  2. `app.json`의 `androidAppId`, `iosAppId` 교체
+  3. `components/AdBanner.tsx`의 `ANDROID_ID`, `IOS_ID` 교체
+
+- [ ] **Step 4: Android AAB 빌드**
 
   ```bash
-  ./gradlew bundleRelease
+  eas build --platform android --profile production
   ```
-
-  output: `app/build/outputs/bundle/release/app-release.aab`
 
 - [ ] **Step 5: Play Store 제출**
 
-  Google Play Console → 앱 만들기 → AAB 업로드 → 내부 테스트 트랙으로 먼저 출시
+  Google Play Console → 앱 만들기 → AAB 업로드 → 내부 테스트 트랙
 
 - [ ] **Step 6: 최종 커밋**
 
   ```bash
-  git add app/build.gradle.kts
-  git commit -m "chore: release signing and production AdMob IDs"
+  git add eas.json app.json
+  git commit -m "chore: EAS build config and production AdMob IDs"
+  git push
   ```
 
 ---
 
 ## 구현 순서 요약
 
-| Task | 내용 | 선행 Task |
-|------|------|---------|
-| 1 | 프로젝트 셋업 | - |
-| 2 | Room DB | 1 |
-| 3 | Theme + 알림 채널 | 1 |
-| 4 | Navigation + AdMob | 2, 3 |
-| 5 | 타이머 Service + VM | 4 |
-| 6 | 타이머 UI | 5 |
-| 7 | 스톱워치 | 4 |
-| 8 | 인터벌 | 4 |
-| 9 | 알람 | 4 |
-| 10 | 출시 준비 | 6, 7, 8, 9 |
+| Task | 내용 | 선행 |
+|------|------|------|
+| 1 | Expo 프로젝트 초기화 + 의존성 | - |
+| 2 | 탭 네비게이션 + AdMob 배너 | 1 |
+| 3 | Zustand 스토어 + AsyncStorage | 1 |
+| 4 | 타이머 탭 | 2, 3 |
+| 5 | 스톱워치 탭 | 2, 3 |
+| 6 | 인터벌 탭 | 2, 3 |
+| 7 | 알람 탭 | 2, 3 |
+| 8 | EAS Build + 출시 | 4, 5, 6, 7 |

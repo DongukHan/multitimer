@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "MultiTimer",
+    "slug": "multitimer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "multitimer",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.multitimer",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.multitimer",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ffffff",
+          "sounds": []
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+        }
+      ],
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

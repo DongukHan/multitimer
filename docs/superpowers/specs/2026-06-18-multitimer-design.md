@@ -1,17 +1,17 @@
-# MultiTimer — Design Spec
+# MultiTimer — Design Spec (React Native/Expo)
 
-**Date:** 2026-06-18  
-**Platform:** Android  
-**Monetization:** AdMob (배너 광고)  
+**Date:** 2026-06-18 (revised from Kotlin to React Native)
+**Platform:** Android + iOS (Expo Managed Workflow)
+**Monetization:** AdMob (배너 광고)
 **Target:** 아이폰 기본 시계 앱보다 나은 타이머/알람 앱
 
 ---
 
 ## 목표
 
-- Android 입문 첫 앱으로, 구조를 익히면서 실제 수익화까지 연결
-- 여러 개의 단순 유틸리티 앱을 만드는 시리즈의 첫 번째
-- 차별점: 다중 타이머 동시 실행, 프리셋, 인터벌 타이머
+- Android + iOS 동시 출시
+- 광고(AdMob) 기반 무료 앱 수익화
+- 차별점: 다중 타이머 동시 실행, 프리셋 저장, 인터벌 타이머
 
 ---
 
@@ -19,74 +19,82 @@
 
 | 항목 | 선택 | 이유 |
 |------|------|------|
-| 언어 | Kotlin | Java 경험자에게 자연스러운 전환 |
-| UI | Jetpack Compose | 최신 Android 표준, XML보다 직관적 |
-| 백그라운드 | Foreground Service | 앱 종료 후에도 타이머 유지 |
-| 알람 | AlarmManager (exact) | 정확한 시간 트리거 |
-| DB | Room | 프리셋·인터벌 설정 영속화 |
-| 광고 | AdMob 배너 | 하단 고정, 무료 앱 수익화 |
-| 빌드 | Gradle (Kotlin DSL) | 표준 |
+| 프레임워크 | Expo SDK 52 (Managed) | 설정 최소화, 빠른 시작 |
+| 언어 | TypeScript | 타입 안전성 |
+| 네비게이션 | Expo Router (파일 기반) | Expo 기본 내장 |
+| 상태관리 | Zustand | 간단하고 React Native에 최적 |
+| 저장소 | AsyncStorage | 프리셋·인터벌·알람 영속화 |
+| 알림/알람 | expo-notifications | 백그라운드 알람 + 타이머 완료 알림 |
+| 사운드 | expo-av | 알람 소리 |
+| 광고 | react-native-google-mobile-ads | AdMob 배너 |
+| 화면 유지 | expo-keep-awake | 타이머 실행 중 화면 꺼짐 방지 |
+| 빌드/배포 | EAS Build | Play Store / App Store 제출 |
+
+---
+
+## 타이머 백그라운드 전략
+
+앱이 백그라운드로 가면 JS 실행이 제한됨. 해결책:
+- **포그라운드:** `setInterval`로 1초마다 UI 업데이트
+- **백그라운드:** 타이머 종료 시각을 계산해 `expo-notifications`로 로컬 알림 예약
+- **복귀 시:** 현재 시각과 저장된 종료 시각 비교해 남은 시간 재계산
 
 ---
 
 ## 화면 구성 (탭 4개)
 
-### 1. 타이머 탭
-- 타이머 카드 리스트 (스크롤 가능)
-- 각 카드: 레이블, 시간 피커, 시작/정지/리셋 버튼, 진행 원형 인디케이터
-- FAB(+)으로 타이머 추가
-- 프리셋 저장/불러오기
-- 타이머 완료 시 Notification + 진동/소리
+### 1. 타이머 탭 (`/`)
+- 타이머 카드 리스트 (여러 개 동시 실행)
+- 각 카드: 이름, 진행 바, 남은 시간, 시작/정지/리셋
+- FAB(+)으로 추가, 프리셋 저장/불러오기
 
-### 2. 스톱워치 탭
-- 큰 숫자 (mm:ss.ms)
-- 시작/정지, 랩, 리셋 버튼
-- 랩 기록 리스트 (현재 랩 / 최고 랩 하이라이트)
+### 2. 스톱워치 탭 (`/stopwatch`)
+- 큰 숫자 표시 (mm:ss.ms)
+- 시작/정지, 랩, 리셋
+- 랩 기록 리스트
 
-### 3. 인터벌 타이머 탭
-- 구간(Step) 리스트: 이름 + 시간
-- 구간 추가/삭제/순서 변경 (드래그)
-- 전체 반복 횟수 설정
-- 실행 화면: 현재 구간 이름·남은 시간·다음 구간 미리보기
-- 완료 시 Notification
+### 3. 인터벌 탭 (`/interval`)
+- 세션 목록 (이름 + 구간 수 + 반복 횟수)
+- 세션 실행 시: 현재 구간 이름·남은 시간·다음 구간 미리보기
+- 구간 완료마다 알림음
 
-### 4. 알람 탭
-- 알람 목록 (켜기/끄기 토글)
-- 알람 편집: 시간, 요일 반복, 레이블, 벨소리 선택
-- AlarmManager exact alarm 사용
-- 알람 화면(full-screen intent): 끄기/다시알림(snooze)
+### 4. 알람 탭 (`/alarm`)
+- 알람 목록 (켜기/끄기)
+- 시간, 요일 반복, 레이블 설정
+- `expo-notifications`로 정확한 시간에 트리거
 
 ---
 
 ## 데이터 모델
 
-```
-TimerPreset(id, label, durationSeconds)
-IntervalSession(id, label, steps: List<IntervalStep>, repeatCount)
-IntervalStep(id, sessionId, label, durationSeconds, order)
-Alarm(id, label, hour, minute, daysOfWeek: Set<Int>, isEnabled, ringtoneUri)
+```typescript
+// 타이머 프리셋
+type TimerPreset = { id: string; label: string; durationSeconds: number }
+
+// 인터벌 세션
+type IntervalStep = { id: string; label: string; durationSeconds: number }
+type IntervalSession = { id: string; label: string; steps: IntervalStep[]; repeatCount: number }
+
+// 알람
+type Alarm = {
+  id: string; label: string; hour: number; minute: number;
+  daysOfWeek: number[]; // 0=일 ~ 6=토, 빈 배열=한 번만
+  isEnabled: boolean;
+}
 ```
 
 ---
 
 ## 광고 배치
 
-- 각 탭 하단에 AdMob 배너 고정
-- 타이머 실행 중 방해 최소화 (인터스티셜 없음, 배너만)
+- 각 탭 하단 AdMob 배너 고정 (320×50)
+- 테스트 ID 사용 후 실 ID로 교체
 
 ---
 
 ## 비기능 요구사항
 
-- 앱 종료·재시작 후에도 실행 중 타이머 상태 복원
-- Android 8.0(API 26) 이상 지원
-- 다크 모드 지원 (Material You 색상)
-- 최소 권한: FOREGROUND_SERVICE, SCHEDULE_EXACT_ALARM, POST_NOTIFICATIONS, RECEIVE_BOOT_COMPLETED
-
----
-
-## 출시 후 계획
-
-1. MultiTimer 완성 → Play Store 출시
-2. 소음 측정기, 단위 변환기 등 후속 앱 제작
-3. 수익 확인 후 인터스티셜 광고 추가 여부 판단
+- Android / iOS 동시 지원
+- 다크 모드 지원
+- 앱 재시작 후 알람 상태 복원 (AsyncStorage에서 로드 후 재예약)
+- EAS Build로 AAB(Android) / IPA(iOS) 생성
