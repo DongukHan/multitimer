@@ -33,7 +33,7 @@ export const useIntervalStore = create<IntervalStore>((set) => ({
 
   deleteSession: (id) =>
     set((s) => {
-      const updated = s.sessions.filter((s) => s.id !== id);
+      const updated = s.sessions.filter((sess) => sess.id !== id);
       saveItem('interval_sessions', updated);
       return { sessions: updated };
     }),

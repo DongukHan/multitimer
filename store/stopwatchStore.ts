@@ -13,7 +13,7 @@ type StopwatchStore = {
   tick: () => void;
 };
 
-export const useStopwatchStore = create<StopwatchStore>((set, get) => ({
+export const useStopwatchStore = create<StopwatchStore>((set) => ({
   elapsed: 0,
   laps: [],
   isRunning: false,
