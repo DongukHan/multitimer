@@ -8,6 +8,11 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 type Props = { session: IntervalSession; onStop: () => void };
 
 export default function IntervalRunView({ session, onStop }: Props) {
+  // Refs track the source of truth for countdown state (mutated safely inside interval callback)
+  const stepIdxRef = useRef(0);
+  const repeatRef = useRef(1);
+
+  // Display state drives UI re-renders
   const [stepIdx, setStepIdx] = useState(0);
   const [repeat, setRepeat] = useState(1);
   const [remaining, setRemaining] = useState(session.steps[0]?.durationSeconds ?? 0);
@@ -20,38 +25,45 @@ export default function IntervalRunView({ session, onStop }: Props) {
 
   useEffect(() => {
     activateKeepAwakeAsync();
-    return () => { deactivateKeepAwake(); };
+    return () => {
+      deactivateKeepAwake();
+      cancelNotification(`timer_${session.id}`);
+    };
   }, []);
 
   useEffect(() => {
-    if (isRunning) {
-      intervalRef.current = setInterval(() => {
-        setRemaining((r) => {
-          if (r <= 1) {
-            // 다음 스텝으로
-            const nextIdx = stepIdx + 1;
-            if (nextIdx < session.steps.length) {
-              setStepIdx(nextIdx);
-              return session.steps[nextIdx].durationSeconds;
-            } else if (repeat < session.repeatCount) {
-              setRepeat((prev) => prev + 1);
-              setStepIdx(0);
-              return session.steps[0].durationSeconds;
-            } else {
-              if (intervalRef.current) clearInterval(intervalRef.current);
-              setIsRunning(false);
-              scheduleTimerNotification(session.id, `${session.label} 완료!`, 0);
-              return 0;
-            }
-          }
-          return r - 1;
-        });
-      }, 1000);
-    } else {
+    if (!isRunning) {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
     }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [isRunning, stepIdx, repeat]);
+    intervalRef.current = setInterval(() => {
+      setRemaining((r) => {
+        if (r > 1) return r - 1;
+
+        // Step complete — advance outside the updater using refs
+        const nextIdx = stepIdxRef.current + 1;
+        if (nextIdx < session.steps.length) {
+          stepIdxRef.current = nextIdx;
+          setStepIdx(nextIdx);
+          return session.steps[nextIdx].durationSeconds;
+        } else if (repeatRef.current < session.repeatCount) {
+          repeatRef.current += 1;
+          setRepeat(repeatRef.current);
+          stepIdxRef.current = 0;
+          setStepIdx(0);
+          return session.steps[0].durationSeconds;
+        } else {
+          clearInterval(intervalRef.current!);
+          setIsRunning(false);
+          scheduleTimerNotification(session.id, `${session.label} 완료!`, 1);
+          return 0;
+        }
+      });
+    }, 1000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isRunning]);
 
   return (
     <View style={[styles.container, isDark && styles.containerDark]}>
@@ -61,7 +73,7 @@ export default function IntervalRunView({ session, onStop }: Props) {
       <Text style={[styles.time, isDark && styles.textDark]}>{formatTime(remaining)}</Text>
       {nextStep && <Text style={styles.next}>다음: {nextStep.label}</Text>}
       <View style={styles.controls}>
-        <TouchableOpacity style={styles.stopBtn} onPress={onStop}>
+        <TouchableOpacity style={styles.stopBtn} onPress={() => { cancelNotification(`timer_${session.id}`); onStop(); }}>
           <Text style={styles.stopBtnText}>중지</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.pauseBtn} onPress={() => setIsRunning((r) => !r)}>

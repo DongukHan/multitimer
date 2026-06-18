@@ -6,7 +6,7 @@ import IntervalRunView from '@/components/IntervalRunView';
 import AdBanner from '@/components/AdBanner';
 
 export default function IntervalScreen() {
-  const { sessions, hydrated, hydrate, addSession, deleteSession } = useIntervalStore();
+  const { sessions, hydrate, addSession, deleteSession } = useIntervalStore();
   const [running, setRunning] = useState<IntervalSession | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const isDark = useColorScheme() === 'dark';
@@ -48,25 +48,34 @@ export default function IntervalScreen() {
   );
 }
 
-function AddSessionModal({ visible, onClose, onSave, isDark }: { visible: boolean; onClose: () => void; onSave: (s: Omit<IntervalSession, 'id'>) => void; isDark: boolean }) {
+function AddSessionModal({ visible, onClose, onSave, isDark }: { visible: boolean; onClose: () => void; onSave: (s: Omit<IntervalSession, 'id' | 'steps'> & { steps: Array<Omit<IntervalStep, 'id'>> }) => void; isDark: boolean }) {
   const [label, setLabel] = useState('');
   const [repeatCount, setRepeatCount] = useState('1');
-  const [steps, setSteps] = useState<Omit<IntervalStep, 'id'>[]>([]);
+  const [steps, setSteps] = useState<Array<Omit<IntervalStep, 'id'>>>([]);
   const [stepLabel, setStepLabel] = useState('');
   const [stepSecs, setStepSecs] = useState('');
 
+  const handleClose = () => {
+    setLabel('');
+    setRepeatCount('1');
+    setSteps([]);
+    setStepLabel('');
+    setStepSecs('');
+    onClose();
+  };
+
   const handleSave = () => {
     if (!label || steps.length === 0) return;
-    onSave({ label, steps: steps as IntervalStep[], repeatCount: parseInt(repeatCount) || 1 });
+    onSave({ label, steps, repeatCount: parseInt(repeatCount) || 1 });
     setLabel(''); setRepeatCount('1'); setSteps([]); onClose();
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={[styles.modal, isDark && styles.modalDark]}>
         <View style={styles.modalHeader}>
           <Text style={[styles.modalTitle, isDark && styles.textDark]}>인터벌 세션</Text>
-          <TouchableOpacity onPress={onClose}><Text style={{ color: '#999', fontSize: 24 }}>✕</Text></TouchableOpacity>
+          <TouchableOpacity onPress={handleClose}><Text style={{ color: '#999', fontSize: 24 }}>✕</Text></TouchableOpacity>
         </View>
         <TextInput style={[styles.input, isDark && styles.inputDark]} placeholder="세션 이름" placeholderTextColor="#999" value={label} onChangeText={setLabel} />
         <TextInput style={[styles.input, isDark && styles.inputDark]} placeholder="반복 횟수" placeholderTextColor="#999" keyboardType="numeric" value={repeatCount} onChangeText={setRepeatCount} />

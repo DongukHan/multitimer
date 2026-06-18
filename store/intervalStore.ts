@@ -8,7 +8,7 @@ type IntervalStore = {
   sessions: IntervalSession[];
   hydrated: boolean;
   hydrate: () => Promise<void>;
-  addSession: (session: Omit<IntervalSession, 'id'>) => void;
+  addSession: (session: Omit<IntervalSession, 'id' | 'steps'> & { steps: Array<Omit<IntervalStep, 'id'>> }) => void;
   deleteSession: (id: string) => void;
 };
 
